@@ -5,10 +5,12 @@ import com.mamba.Vec
 import com.mamba.vec
 import eraftpb.Eraftpb
 
-class MemStorage: Storage {
+class MemStorage : Storage {
     val raftState: RaftState
+
     // entries[i] has raft log position i+snapshot.get_metadata().index
     val entries: Vec<Eraftpb.Entry>
+
     // Metadata of the last snapshot received.
     val snapshotMetadata: Eraftpb.SnapshotMetadata
 

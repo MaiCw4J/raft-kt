@@ -29,10 +29,12 @@ class Ready {
 
     val mustSync: Boolean
 
-    constructor(raft: Raft,
-                ss: SoftState,
-                hs: Eraftpb.HardState,
-                sinceIdx: Long?) {
+    constructor(
+        raft: Raft<*>,
+        ss: SoftState,
+        hs: Eraftpb.HardState,
+        sinceIdx: Long?
+    ) {
 
         this.entries = raft.raftLog.unstableEntries()?.map { it.build() }
 
@@ -51,7 +53,7 @@ class Ready {
             raft.raftLog.nextEntriesSince(sinceIdx)
         }
 
-        this.ss = if (raft.softState() != ss) ss  else null
+        this.ss = if (raft.softState() != ss) ss else null
 
         val rhs = raft.hardState()
         if (rhs != hs) {

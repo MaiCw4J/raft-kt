@@ -22,14 +22,17 @@ import kotlin.random.Random
 // CAMPAIGN_PRE_ELECTION represents the first phase of a normal election when
 // Config.pre_vote is true.
 val CAMPAIGN_PRE_ELECTION: ByteString = ByteString.copyFromUtf8("CampaignPreElection")
+
 // CAMPAIGN_ELECTION represents a normal (time-based) election (the second phase
 // of the election when Config.pre_vote is true).
 val CAMPAIGN_ELECTION: ByteString = ByteString.copyFromUtf8("CampaignElection")
+
 // CAMPAIGN_TRANSFER represents the type of leader transfer.
 val CAMPAIGN_TRANSFER: ByteString = ByteString.copyFromUtf8("CampaignTransfer")
 
 /// A constant represents invalid id of raft.
 const val INVALID_ID: Long = 0
+
 /// A constant represents invalid index of raft log.
 const val INVALID_INDEX: Long = 0
 
@@ -42,6 +45,7 @@ fun buildMessage(to: Long, fieldType: Eraftpb.MessageType, from: Long?): Eraftpb
         }
     }
 }
+
 /// Maps vote and pre_vote message types to their correspond responses.
 fun voteRespMsgType(type: Eraftpb.MessageType): Eraftpb.MessageType = when (type) {
     MsgRequestVote -> MsgRequestVoteResponse
@@ -58,7 +62,7 @@ data class SoftState(
     val raftState: StateRole
 )
 
-class Raft(config: Config, store: Storage) {
+class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
     /// The current election term.
     var term: Long
 
@@ -72,7 +76,7 @@ class Raft(config: Config, store: Storage) {
     val readStates: Vec<ReadState>
 
     /// The persistent log.
-    var raftLog: RaftLog
+    var raftLog: RaftLog<STORAGE>
 
     /// The maximum number of messages that can be inflight.
     var maxInflight: Int
@@ -296,7 +300,7 @@ class Raft(config: Config, store: Storage) {
                 // term.
             } else {
                 logger.info { "received a message with higher term from ${m.from} [term: ${this.term}, message term: ${m.term}, msg type: ${m.msgType}]" }
-                val from = when(m.msgType) {
+                val from = when (m.msgType) {
                     MsgAppend, MsgHeartbeat, MsgSnapshot -> m.from
                     else -> INVALID_ID
                 }
@@ -343,7 +347,7 @@ class Raft(config: Config, store: Storage) {
             return
         }
 
-        when(m.msgType) {
+        when (m.msgType) {
             MsgHup -> this.hup(false)
             MsgRequestVote, MsgRequestPreVote -> {
                 // We can vote if this is a repeat of a vote we've already cast...
@@ -391,7 +395,7 @@ class Raft(config: Config, store: Storage) {
                 }
                 this.send(toSend)
             }
-            else -> when(this.state) {
+            else -> when (this.state) {
                 StateRole.Leader -> this.stepLeader(m)
                 StateRole.Follower -> this.stepFollower(m)
                 StateRole.Candidate, StateRole.PreCandidate -> this.stepCandidate(m)
@@ -402,7 +406,7 @@ class Raft(config: Config, store: Storage) {
     // step_candidate is shared by state Candidate and PreCandidate; the difference is
     // whether they respond to MsgRequestVote or MsgRequestPreVote.
     private fun stepCandidate(m: Eraftpb.Message.Builder) {
-        when(m.msgType) {
+        when (m.msgType) {
             MsgPropose -> {
                 logger.info { "no leader at term $term; dropping proposal" }
                 raftError(RaftError.ProposalDropped)
@@ -440,7 +444,8 @@ class Raft(config: Config, store: Storage) {
                     logger.debug { "${this.term} ignored MsgTimeoutNow from ${m.from}" }
                 }
             }
-            else -> {}
+            else -> {
+            }
         }
     }
 
@@ -448,8 +453,10 @@ class Raft(config: Config, store: Storage) {
         val restored = this.restore(m.snapshot)
 
         val metadata = m.snapshot.metadata
-        logger.info { "[commit: ${this.raftLog.committed}, term: ${this.term}] ${if (restored) "restored" else "ignored"} snapshot " +
-                "[index: ${metadata.index}, term: ${metadata.term}]" }
+        logger.info {
+            "[commit: ${this.raftLog.committed}, term: ${this.term}] ${if (restored) "restored" else "ignored"} snapshot " +
+                    "[index: ${metadata.index}, term: ${metadata.term}]"
+        }
 
         val lastIdx = if (restored) this.raftLog.lastIndex() else this.raftLog.committed
 
@@ -535,7 +542,7 @@ class Raft(config: Config, store: Storage) {
     }
 
     private fun stepFollower(m: Eraftpb.Message.Builder) {
-        when(m.msgType) {
+        when (m.msgType) {
             MsgPropose -> {
                 if (this.leaderId == INVALID_ID) {
                     logger.info { "no leader at term ${this.term}; dropping proposal" }
@@ -603,13 +610,14 @@ class Raft(config: Config, store: Storage) {
                 // because the leader only handle MsgReadIndex after it has committed log entry in its term.
                 this.raftLog.maybeCommit(m.index, m.term)
             }
-            else -> {}
+            else -> {
+            }
         }
     }
 
     private fun stepLeader(m: Eraftpb.Message.Builder) {
         // These message types do not require any progress for m.From.
-        when(m.msgType) {
+        when (m.msgType) {
             MsgBeat -> {
                 this.bcastHeartbeat()
                 return
@@ -643,7 +651,9 @@ class Raft(config: Config, store: Storage) {
                     if (e.entryType == Eraftpb.EntryType.EntryConfChange) {
                         if (this.hasPendingConf()) {
                             logger.info { "propose conf entry ignored since pending unapplied configuration" }
-                            m.setEntries(i, Eraftpb.Entry.newBuilder().apply { this.entryType = Eraftpb.EntryType.EntryNormal })
+                            m.setEntries(
+                                i,
+                                Eraftpb.Entry.newBuilder().apply { this.entryType = Eraftpb.EntryType.EntryNormal })
                         } else {
                             this.pendingConfIndex = this.raftLog.lastIndex() + i + 1
                         }
@@ -690,7 +700,8 @@ class Raft(config: Config, store: Storage) {
                 }
                 return
             }
-            else -> { /* to do nothing */ }
+            else -> { /* to do nothing */
+            }
         }
 
         val from = this.prs.progress[m.from]
@@ -724,7 +735,7 @@ class Raft(config: Config, store: Storage) {
                         return
                     }
 
-                    when(from.state) {
+                    when (from.state) {
                         ProgressState.Probe -> from.becomeReplicate()
                         ProgressState.Snapshot -> if (from.maybeSnapshotAbort()) {
                             if (logger.isDebugEnabled) {
@@ -750,14 +761,15 @@ class Raft(config: Config, store: Storage) {
                     // we have more entries to send, send as many messages as we
                     // can (without sending empty messages for the commit index)
                     @Suppress("ControlFlowWithEmptyBody")
-                    while (this.maybeSendAppend(m.from, from,false)) {}
+                    while (this.maybeSendAppend(m.from, from, false)) {
+                    }
 
                     // Transfer leadership is in progress.
                     val isTimeoutNow = this.leadTransferee != null &&
                             this.leadTransferee == m.from &&
                             from.matched == this.raftLog.lastIndex()
                     if (isTimeoutNow) {
-                        logger.info( "sent MsgTimeoutNow to ${m.from} after received MsgAppResp" )
+                        logger.info("sent MsgTimeoutNow to ${m.from} after received MsgAppResp")
                         this.sendTimeoutNow(m.from)
                     }
                 }
@@ -859,7 +871,8 @@ class Raft(config: Config, store: Storage) {
                     this.sendAppend(leadTransferee, pr)
                 }
             }
-            else -> { /* to do nothing */ }
+            else -> { /* to do nothing */
+            }
         }
     }
 
@@ -913,7 +926,10 @@ class Raft(config: Config, store: Storage) {
         val entries = try {
             this.raftLog.slice(firstIdx, this.raftLog.committed + 1, null)
         } catch (e: RaftErrorException) {
-            fatal(logger, "unexpected error getting unapplied entries [$firstIdx, ${this.raftLog.committed + 1}): ${e.error}")
+            fatal(
+                logger,
+                "unexpected error getting unapplied entries [$firstIdx, ${this.raftLog.committed + 1}): ${e.error}"
+            )
         }
 
         val n = this.numPendingConf(entries)
@@ -988,7 +1004,8 @@ class Raft(config: Config, store: Storage) {
                 // m.term > self.term; reuse self.term
                 this.becomeFollower(this.term, INVALID_ID)
             }
-            CandidacyStatus.Eligible -> {}
+            CandidacyStatus.Eligible -> {
+            }
         }
     }
 
@@ -1103,8 +1120,10 @@ class Raft(config: Config, store: Storage) {
             }
             m.snapshot = raftSnapshot
             if (logger.isDebugEnabled) {
-                logger.debug { "[first index: ${this.raftLog.firstIndex()}, commit: ${this.raftLog.committed}] " +
-                        "sent snapshot[index: ${raftSnapshot.metadata.index}, term: ${raftSnapshot.metadata.term}] to $to" }
+                logger.debug {
+                    "[first index: ${this.raftLog.firstIndex()}, commit: ${this.raftLog.committed}] " +
+                            "sent snapshot[index: ${raftSnapshot.metadata.index}, term: ${raftSnapshot.metadata.term}] to $to"
+                }
             }
 
             pr.becomeSnapshot(raftSnapshot.metadata.index)
@@ -1284,14 +1303,15 @@ class Raft(config: Config, store: Storage) {
         logger.info { "became pre-candidate at term ${this.term}" }
     }
 
-    private fun numPendingConf(entries: Vec<Eraftpb.Entry>): Int = entries.count { it.entryType == Eraftpb.EntryType.EntryConfChange }
+    private fun numPendingConf(entries: Vec<Eraftpb.Entry>): Int =
+        entries.count { it.entryType == Eraftpb.EntryType.EntryConfChange }
 
     // send persists state to stable storage and then sends to its mailbox.
     private fun send(m: Eraftpb.Message.Builder) {
         if (logger.isDebugEnabled) {
             logger.debug { "Sending from ${this.id} to ${m.to}" }
         }
-        when(m.msgType) {
+        when (m.msgType) {
             MsgRequestVote, MsgRequestPreVote, MsgRequestVoteResponse, MsgRequestPreVoteResponse -> {
                 if (m.term == 0L) {
                     // All {pre-,}campaign messages need to have the term set when
@@ -1364,7 +1384,8 @@ class Raft(config: Config, store: Storage) {
         Eraftpb.Message.newBuilder().run {
             this.to = m.from
             this.msgType = MsgAppendResponse
-            val lastIdx = this@Raft.raftLog.maybeAppend(m.index, m.logTerm, m.commit, m.entriesBuilderList.toTypedArray())
+            val lastIdx =
+                this@Raft.raftLog.maybeAppend(m.index, m.logTerm, m.commit, m.entriesBuilderList.toTypedArray())
             if (lastIdx != null) {
                 this.index = lastIdx
             } else {
@@ -1414,7 +1435,11 @@ class Raft(config: Config, store: Storage) {
     /// Checks if logs are committed to its term.
     ///
     /// The check is useful usually when raft is leader.
-    private fun commitToCurrentTerm(): Boolean = try { this.raftLog.term(this.raftLog.committed) == this.term } catch (e: RaftErrorException) { false }
+    private fun commitToCurrentTerm(): Boolean = try {
+        this.raftLog.term(this.raftLog.committed) == this.term
+    } catch (e: RaftErrorException) {
+        false
+    }
 
     /// Commit that the Raft peer has applied up to the given index.
     ///
@@ -1480,12 +1505,16 @@ class Raft(config: Config, store: Storage) {
 
         // The quorum size is now smaller, so see if any pending entries can
         // be committed.
-        if (this.maybeCommit()) { this.bcastAppend() }
+        if (this.maybeCommit()) {
+            this.bcastAppend()
+        }
 
         // If the removed node is the lead_transferee, then abort the leadership transferring.
         if (this.state == StateRole.Leader) {
             this.leadTransferee?.run {
-                if (this == id) { this@Raft.abortLeaderTransfer() }
+                if (this == id) {
+                    this@Raft.abortLeaderTransfer()
+                }
             }
         }
     }

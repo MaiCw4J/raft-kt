@@ -5,10 +5,13 @@ import com.mamba.panic
 class Inflights {
     // the starting index in the buffer
     var start: Int
+
     // number of inflights in the buffer
     var count: Int
+
     // cap ring buffer
     val cap: Int
+
     // ring buffer
     val buffer: MutableList<Long>
 

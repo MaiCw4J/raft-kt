@@ -10,6 +10,7 @@ enum class ReadOnlyOption {
     /// Safe guarantees the linearizability of the read only request by
     /// communicating with the quorum. It is the default and suggested option.
     Safe,
+
     /// LeaseBased ensures linearizability of the read only request by
     /// relying on the leader lease. It can be affected by clock drift.
     /// If the clock drift is unbounded, leader might keep the lease longer than it

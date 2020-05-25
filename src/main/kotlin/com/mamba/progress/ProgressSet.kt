@@ -14,8 +14,10 @@ import mu.KotlinLogging
 enum class CandidacyStatus {
     /// The election has been won by this Raft.
     Elected,
+
     /// It is still possible to win the election.
     Eligible,
+
     /// It is no longer possible to win the election.
     Ineligible,
 }
@@ -153,7 +155,7 @@ class ProgressSet {
     ///
     /// * `id` is in the voter set.
     /// * `id` is in the learner set.
-    fun insertVoterOrLearner(id: Long, pr: Progress, role: ProgressRole)  {
+    fun insertVoterOrLearner(id: Long, pr: Progress, role: ProgressRole) {
         if (logger.isDebugEnabled) {
             logger.debug("inserting ${role.name} with id $id")
         }

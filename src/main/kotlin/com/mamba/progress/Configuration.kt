@@ -10,6 +10,7 @@ import eraftpb.Eraftpb
 class Configuration {
     /// The voter set.
     val votes: MutableSet<Long>
+
     /// The learner set.
     val learners: MutableSet<Long>
 
@@ -48,7 +49,8 @@ class Configuration {
         }
     }
 
-    fun hasQuorum(potentialQuorum: Set<Long>): Boolean = (this.votes intersect potentialQuorum).size >= majority(this.votes.size)
+    fun hasQuorum(potentialQuorum: Set<Long>): Boolean =
+        (this.votes intersect potentialQuorum).size >= majority(this.votes.size)
 
     /// Returns whether or not the given `id` is a member of this configuration.
     fun contains(id: Long): Boolean = this.votes.contains(id) || this.learners.contains(id)

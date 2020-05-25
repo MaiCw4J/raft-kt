@@ -11,13 +11,13 @@ import eraftpb.Eraftpb
 /// RawNode is a thread-unsafe Node.
 /// The methods of this struct correspond to the methods of Node and are described
 /// more fully there.
-class RawNode {
+class RawNode<STORAGE : Storage> {
     /// The internal raft state.
-    val raft: Raft
+    val raft: Raft<STORAGE>
     var ss: SoftState
     var hs: Eraftpb.HardState
 
-    constructor(config: Config, store: Storage) {
+    constructor(config: Config, store: STORAGE) {
         this.raft = Raft(config, store)
         this.hs = this.raft.hardState()
         this.ss = this.raft.softState()
@@ -272,7 +272,7 @@ class RawNode {
     }
 
     /// Returns the store as an immutable reference.
-    fun store(): Storage = this.raft.raftLog.store
+    fun store(): STORAGE = this.raft.raftLog.store
 
     /// Set whether skip broadcast empty commit messages at runtime.
     fun skipBcastCommit(skip: Boolean) = this.raft.skipBcastCommit(skip)

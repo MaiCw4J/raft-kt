@@ -9,9 +9,9 @@ import kotlin.math.max
 import kotlin.math.min
 
 /// Raft log implementation
-class RaftLog {
+class RaftLog<STORAGE : Storage> {
     /// Contains all stable entries since the last snapshot.
-    val store: Storage
+    val store: STORAGE
 
     /// Contains all unstable entries and snapshot.
     /// they will be saved into storage.
@@ -29,7 +29,7 @@ class RaftLog {
 
     private val logger = KotlinLogging.logger {}
 
-    constructor(storage: Storage) {
+    constructor(storage: STORAGE) {
         val initIndex = storage.firstIndex() + 1
 
         this.store = storage
@@ -128,7 +128,8 @@ class RaftLog {
         if (this.matchTerm(idx, term)) {
             val conflictIdx = this.findConflict(entries)
             when {
-                conflictIdx == 0L -> {}
+                conflictIdx == 0L -> {
+                }
                 conflictIdx <= this.committed -> {
                     fatal(logger, "entry $conflictIdx conflict with committed entry ${this.committed}")
                 }
@@ -232,9 +233,12 @@ class RaftLog {
                     return entries
                 }
             } catch (e: RaftErrorException) {
-                when(e.error) {
+                when (e.error) {
                     RaftError.Storage_Compacted -> throw e
-                    RaftError.Storage_Unavailable -> fatal(logger, "entries[$low:$unstableHigh] is unavailable from storage")
+                    RaftError.Storage_Unavailable -> fatal(
+                        logger,
+                        "entries[$low:$unstableHigh] is unavailable from storage"
+                    )
                     else -> fatal(logger, "unexpected error: ${e.error}")
                 }
             }
@@ -253,7 +257,11 @@ class RaftLog {
 
     /// Attempts to commit the index and term and returns whether it did.
     fun maybeCommit(maxIdx: Long, term: Long): Boolean {
-        val r = maxIdx > this.committed && try { this.term(maxIdx) } catch (e: RaftErrorException) { 0 } == term
+        val r = maxIdx > this.committed && try {
+            this.term(maxIdx)
+        } catch (e: RaftErrorException) {
+            0
+        } == term
         if (r) {
             if (logger.isDebugEnabled) {
                 logger.debug { "committing index $maxIdx" }
@@ -278,7 +286,8 @@ class RaftLog {
     /// later term is more up-to-date. If the logs end with the same term, then
     /// whichever log has the larger last_index is more up-to-date. If the logs are
     /// the same, the given log is up-to-date.
-    fun isUpToDate(lastIdx: Long, term: Long): Boolean = term > this.lastTerm() || (term == this.lastTerm() && lastIdx >= this.lastIndex())
+    fun isUpToDate(lastIdx: Long, term: Long): Boolean =
+        term > this.lastTerm() || (term == this.lastTerm() && lastIdx >= this.lastIndex())
 
     /// Returns the current snapshot
     fun snapshot(requestIdx: Long): Eraftpb.Snapshot {
@@ -292,7 +301,7 @@ class RaftLog {
     }
 
     /// Returns entries starting from a particular index and not exceeding a bytesize.
-    fun entries(idx:Long, maxSize: Long?): Vec<Eraftpb.Entry> {
+    fun entries(idx: Long, maxSize: Long?): Vec<Eraftpb.Entry> {
         val lastIdx = this.lastIndex()
         if (idx > lastIdx) {
             return vec()

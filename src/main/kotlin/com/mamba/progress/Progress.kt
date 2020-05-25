@@ -9,8 +9,10 @@ import kotlin.math.min
 class Progress {
     /// How much state is matched.
     var matched: Long
+
     /// The next index to apply
     var nextIdx: Long
+
     /// When in ProgressStateProbe, leader sends at most one replication message
     /// per heartbeat interval. It also probes actual progress of the follower.
     ///
@@ -21,15 +23,18 @@ class Progress {
     /// When in ProgressStateSnapshot, leader should have sent out snapshot
     /// before and stop sending any replication message.
     var state: ProgressState
+
     /// Paused is used in ProgressStateProbe.
     /// When Paused is true, raft should pause sending replication message to this peer.
     var paused: Boolean
+
     /// This field is used in ProgressStateSnapshot.
     /// If there is a pending snapshot, the pendingSnapshot will be set to the
     /// index of the snapshot. If pendingSnapshot is set, the replication process of
     /// this Progress will be paused. raft will not resend snapshot until the pending one
     /// is reported to be failed.
     var pendingSnapshot: Long
+
     /// This field is used in request snapshot.
     /// If there is a pending request snapshot, this will be set to the request
     /// index of the snapshot.
@@ -175,7 +180,7 @@ class Progress {
         if (requestSnapshot == INVALID_INDEX) {
             val min = min(rejected, last + 1)
             // always greater than zero
-            this.nextIdx = if (min  < 1) 1 else min
+            this.nextIdx = if (min < 1) 1 else min
         } else {
             // Allow requesting snapshot even if it's not Replicate.
             this.pendingRequestSnapshot = requestSnapshot
@@ -185,7 +190,7 @@ class Progress {
     }
 
     /// Determine whether progress is paused.
-    fun isPaused(): Boolean = when(this.state) {
+    fun isPaused(): Boolean = when (this.state) {
         ProgressState.Probe -> this.paused
         ProgressState.Replicate -> this.ins.full()
         ProgressState.Snapshot -> true
@@ -193,7 +198,7 @@ class Progress {
 
     /// Update inflight msgs and next_idx
     fun updateState(last: Long) {
-        when(this.state) {
+        when (this.state) {
             ProgressState.Replicate -> {
                 this.optimisticUpdate(last)
                 this.ins.add(last)
