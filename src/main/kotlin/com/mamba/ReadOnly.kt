@@ -2,7 +2,9 @@ package com.mamba
 
 import com.google.protobuf.ByteString
 import eraftpb.Eraftpb
-import java.util.ArrayDeque
+import mu.KLogger
+import java.util.*
+
 
 enum class ReadOnlyOption {
     /// Safe guarantees the linearizability of the read only request by
@@ -16,7 +18,7 @@ enum class ReadOnlyOption {
     LeaseBased,
 }
 
-data class ReadIndexStatus(val req: Eraftpb.Message.Builder, val index: Long, val acks: Set<Long>)
+data class ReadIndexStatus(val req: Eraftpb.Message.Builder, val index: Long, val acks: MutableSet<Long>)
 
 data class ReadState(val index: Long, val requestCtx: ByteString)
 
@@ -37,7 +39,7 @@ class ReadOnly {
     /// the read only request.
     ///
     /// `m` is the original read only request message from the local or remote node.
-    fun addRequest(index: Long, m: Eraftpb.Message.Builder) {
+    fun addRequest(index: Long, m: Eraftpb.Message.Builder, id: Long) {
         val ctx = m.entriesList.first().data
         if (pendingReadIndex.containsKey(ctx)) {
             return
@@ -45,12 +47,48 @@ class ReadOnly {
         this.pendingReadIndex[ctx] = ReadIndexStatus(
             req = m,
             index = index,
-            acks = hashSetOf()
+            acks = hashSetOf(id)
         )
         this.readIndexQueue.push(ctx)
     }
 
     /// Returns the context of the last pending read only request in ReadOnly struct.
     fun lastPendingRequestCtx(): ByteString? = this.readIndexQueue.last
+
+    /// Notifies the ReadOnly struct that the raft state machine received
+    /// an acknowledgment of the heartbeat that attached with the read only request
+    /// context.
+    fun recvAck(m: Eraftpb.Message.Builder): Set<Long>? {
+        return this.pendingReadIndex[m.context]?.let {
+            it.acks.add(m.from)
+            it.acks
+        }
+    }
+
+    /// Advances the read only request queue kept by the ReadOnly struct.
+    /// It de queues the requests until it finds the read only request that has
+    /// the same context as the given `m`.
+    fun advance(ctx: ByteString?, logger: KLogger): Vec<ReadIndexStatus>? {
+        var index: Int? = null
+        this.readIndexQueue.forEachIndexed { i, x ->
+            if (!this.pendingReadIndex.containsKey(x)) {
+                fatal(logger, "cannot find correspond read state from pending map")
+            }
+            if (x == ctx) {
+                index = i
+                return@forEachIndexed
+            }
+        }
+
+        return index?.let {
+            val rss = vec<ReadIndexStatus>()
+            for (i in 0..it) {
+                val rs = this.readIndexQueue.pollFirst()
+                val status = this.pendingReadIndex.remove(rs)!!
+                rss.add(status)
+            }
+            rss
+        }
+    }
 
 }

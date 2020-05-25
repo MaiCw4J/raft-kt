@@ -2,6 +2,7 @@ package com.mamba
 
 import com.google.protobuf.ByteString
 import com.mamba.constanst.ProgressRole
+import com.mamba.constanst.ProgressState
 import com.mamba.constanst.StateRole
 import com.mamba.exception.RaftError
 import com.mamba.exception.RaftErrorException
@@ -12,8 +13,11 @@ import com.mamba.storage.Storage
 import eraftpb.Eraftpb
 import eraftpb.Eraftpb.MessageType.*
 import mu.KotlinLogging
+import kotlin.collections.component1
+import kotlin.collections.component2
 import kotlin.math.min
 import kotlin.random.Random
+
 
 // CAMPAIGN_PRE_ELECTION represents the first phase of a normal election when
 // Config.pre_vote is true.
@@ -25,9 +29,9 @@ val CAMPAIGN_ELECTION: ByteString = ByteString.copyFromUtf8("CampaignElection")
 val CAMPAIGN_TRANSFER: ByteString = ByteString.copyFromUtf8("CampaignTransfer")
 
 /// A constant represents invalid id of raft.
-const val INVALID_ID: Long = 0;
+const val INVALID_ID: Long = 0
 /// A constant represents invalid index of raft log.
-const val INVALID_INDEX: Long = 0;
+const val INVALID_INDEX: Long = 0
 
 fun buildMessage(to: Long, fieldType: Eraftpb.MessageType, from: Long?): Eraftpb.Message.Builder {
     return Eraftpb.Message.newBuilder().apply {
@@ -225,7 +229,7 @@ class Raft(config: Config, store: Storage) {
             return false
         }
         electionElapsed = 0
-        stepItSelf(MsgHup);
+        stepItSelf(MsgHup)
         return true
     }
 
@@ -343,13 +347,14 @@ class Raft(config: Config, store: Storage) {
             MsgHup -> this.hup(false)
             MsgRequestVote, MsgRequestPreVote -> {
                 // We can vote if this is a repeat of a vote we've already cast...
-                val canVote = (this.vote == m.from) ||
+                val canVote = ((this.vote == m.from) ||
                         // ...we haven't voted and we don't think there's a leader yet in this term...
                         (this.vote == INVALID_ID && this.leaderId == INVALID_ID) ||
                         // ...or this is a PreVote for a future term...
-                        (m.msgType == MsgRequestPreVote && m.term > this.term)
-                val voted = canVote && this.raftLog.isUpToDate(m.index, m.logTerm)
-                if (voted) {
+                        (m.msgType == MsgRequestPreVote && m.term > this.term)) &&
+                        // raft log must up to date
+                        this.raftLog.isUpToDate(m.index, m.logTerm)
+                if (canVote) {
                     // When responding to Msg{Pre,}Vote messages we include the term
                     // from the message, not the local term. To see why consider the
                     // case where a single node was previously partitioned away and
@@ -381,7 +386,7 @@ class Raft(config: Config, store: Storage) {
                     voteRespMsgType(m.msgType),
                     null
                 ).apply {
-                    this.reject = !voted
+                    this.reject = !canVote
                     this.term = m.term
                 }
                 this.send(toSend)
@@ -661,7 +666,7 @@ class Raft(config: Config, store: Storage) {
                     // a user-supplied value.
                     // This would allow multiple reads to piggyback on the same message.
                     val ctx = m.entriesList.first().data
-                    this.readOnly.addRequest(this.raftLog.committed, m)
+                    this.readOnly.addRequest(this.raftLog.committed, m, this.id)
                     this.bcastHeartbeatWithCtx(ctx)
                 } else {
                     // there is only one voting member (the leader) in the cluster or LeaseBased Read
@@ -684,6 +689,175 @@ class Raft(config: Config, store: Storage) {
                     }
                 }
                 return
+            }
+            else -> { /* to do nothing */ }
+        }
+
+        val from = this.prs.progress[m.from]
+        if (from == null) {
+            if (logger.isDebugEnabled) {
+                logger.debug("no progress available for ${m.from}")
+            }
+            return
+        }
+
+        when (m.msgType) {
+            MsgAppendResponse -> {
+                from.recentActive = true
+                if (m.reject) {
+                    if (logger.isDebugEnabled) {
+                        logger.debug("received msgAppend rejection last index ${m.rejectHint}, from ${m.from}, index ${m.index}")
+                    }
+
+                    if (from.maybeDecrTo(m.index, m.rejectHint, m.requestSnapshot)) {
+                        if (logger.isDebugEnabled) {
+                            logger.debug("decreased progress of ${m.from}")
+                        }
+                        if (from.state == ProgressState.Replicate) {
+                            from.becomeProbe()
+                        }
+                        this.sendAppend(m.from, from)
+                    }
+                } else {
+                    val oldPaused = from.isPaused()
+                    if (!from.maybeUpdate(m.index)) {
+                        return
+                    }
+
+                    when(from.state) {
+                        ProgressState.Probe -> from.becomeReplicate()
+                        ProgressState.Snapshot -> if (from.maybeSnapshotAbort()) {
+                            if (logger.isDebugEnabled) {
+                                logger.debug("snapshot aborted, resumed sending replication messages to {}")
+                            }
+                            from.becomeProbe()
+                        }
+                        ProgressState.Replicate -> from.ins.freeTo(m.index)
+                    }
+
+                    if (this.maybeCommit()) {
+                        this.bcastAppend()
+                    } else if (oldPaused) {
+                        // If we were paused before, this node may be missing the
+                        // latest commit index, so send it.
+                        this.sendAppend(m.from, from)
+                    }
+
+                    // We've updated flow control information above, which may
+                    // allow us to send multiple (size-limited) in-flight messages
+                    // at once (such as when transitioning from probe to
+                    // replicate, or when freeTo() covers multiple messages). If
+                    // we have more entries to send, send as many messages as we
+                    // can (without sending empty messages for the commit index)
+                    @Suppress("ControlFlowWithEmptyBody")
+                    while (this.maybeSendAppend(m.from, from,false)) {}
+
+                    // Transfer leadership is in progress.
+                    val isTimeoutNow = this.leadTransferee != null &&
+                            this.leadTransferee == m.from &&
+                            from.matched == this.raftLog.lastIndex()
+                    if (isTimeoutNow) {
+                        logger.info( "sent MsgTimeoutNow to ${m.from} after received MsgAppResp" )
+                        this.sendTimeoutNow(m.from)
+                    }
+                }
+            }
+            MsgHeartbeatResponse -> {
+                from.recentActive = true
+                from.resume()
+
+                // free one slot for the full inflights window to allow progress.
+                if (from.state == ProgressState.Replicate && from.ins.full()) {
+                    from.ins.freeFirstOne()
+                }
+
+                // Does it request snapshot?
+                if (from.matched < this.raftLog.lastIndex() || from.pendingRequestSnapshot != INVALID_INDEX) {
+                    this.sendAppend(m.from, from)
+                }
+
+                if (this.readOnly.option != ReadOnlyOption.Safe || m.context.isEmpty) {
+                    return
+                }
+
+                val recvAck = this.readOnly.recvAck(m)
+                if (recvAck == null || !prs.hasQuorum(recvAck)) {
+                    return
+                }
+
+                val rss = this.readOnly.advance(m.context, this.logger)
+                if (rss != null && rss.isNotEmpty()) {
+                    rss.forEach {
+                        this.responseToReadIndexReq(it.req, it.index)?.run {
+                            this@Raft.send(this)
+                        }
+                    }
+                }
+            }
+            MsgSnapStatus -> {
+                if (from.state == ProgressState.Snapshot) {
+                    if (logger.isDebugEnabled) {
+                        logger.debug("snapshot ${if (m.reject) "failed" else "succeeded"}, resumed sending replication messages to ${m.from}")
+                    }
+                    if (m.reject) {
+                        from.snapshotFailure()
+                    }
+                    from.becomeProbe()
+                    // If snapshot finish, wait for the msgAppResp from the remote node before sending
+                    // out the next msgAppend.
+                    // If snapshot failure, wait for a heartbeat interval before next try
+                    from.pause()
+                    from.pendingRequestSnapshot = INVALID_INDEX
+                }
+            }
+            MsgUnreachable -> {
+                // During optimistic replication, if the remote becomes unreachable,
+                // there is huge probability that a MsgAppend is lost.
+                if (from.state == ProgressState.Replicate) {
+                    from.becomeProbe()
+                }
+                if (logger.isDebugEnabled) {
+                    logger.debug("failed to send message to ${m.from} because it is unreachable")
+                }
+            }
+            MsgTransferLeader -> {
+                val leadTransferee = m.from
+                if (this.prs.learnerIds().contains(leadTransferee)) {
+                    if (logger.isDebugEnabled) {
+                        logger.debug("ignored transferring leadership")
+                    }
+                    return
+                }
+                val lastLeadTransferee = this.leadTransferee
+                if (lastLeadTransferee != null) {
+                    if (lastLeadTransferee == leadTransferee) {
+                        logger.info("[term ${this.term}] transfer leadership to $leadTransferee is in progress, ignores request to same node")
+                        return
+                    }
+                    this.abortLeaderTransfer()
+                    logger.info("[term ${this.term}] abort previous transferring leadership to $lastLeadTransferee")
+                }
+
+                if (leadTransferee == this.id) {
+                    if (logger.isDebugEnabled) {
+                        logger.debug("already leader; ignored transferring leadership to self")
+                    }
+                    return
+                }
+                // Transfer leadership to third party.
+                logger.info("[term ${this.term}] starts to transfer leadership to $leadTransferee")
+                // Transfer leadership should be finished in one electionTimeout
+                // so reset r.electionElapsed.
+                this.electionElapsed = 0
+                this.leadTransferee = leadTransferee
+
+                val pr = this.prs.progress[leadTransferee]
+                if (pr!!.matched == this.raftLog.lastIndex()) {
+                    logger.info("sends MsgTimeoutNow to $leadTransferee immediately as $leadTransferee already has up-to-date log")
+                    this.sendTimeoutNow(leadTransferee)
+                } else {
+                    this.sendAppend(leadTransferee, pr)
+                }
             }
             else -> { /* to do nothing */ }
         }
@@ -834,7 +1008,7 @@ class Raft(config: Config, store: Storage) {
     /// argument controls whether messages with no entries will be sent
     /// ("empty" messages are useful to convey updated Commit indexes, but
     /// are undesirable when we're sending multiple messages in a batch).
-    fun maybeSendAppend(to: Long, pr: Progress, allowEmpty: Boolean): Boolean {
+    private fun maybeSendAppend(to: Long, pr: Progress, allowEmpty: Boolean): Boolean {
         if (pr.isPaused()) {
             if (logger.isTraceEnabled) {
                 logger.trace { "Skipping sending to $to, it's paused" }
@@ -849,12 +1023,7 @@ class Raft(config: Config, store: Storage) {
             }
         } else {
             try {
-                // todo 这里要重构一下
-                val entries = try {
-                    this.raftLog.entries(pr.nextIdx, this.maxMsgSize)
-                } catch (e: RaftErrorException) {
-                    vec<Eraftpb.Entry>()
-                }
+                val entries = this.raftLog.entries(pr.nextIdx, this.maxMsgSize)
 
                 if (!allowEmpty && entries.isEmpty()) {
                     return false
@@ -1025,7 +1194,7 @@ class Raft(config: Config, store: Storage) {
 
     /// Appends a slice of entries to the log. The entries are updated to match
     /// the current index and term.
-    fun appendEntry(entries: Array<Eraftpb.Entry.Builder>) {
+    private fun appendEntry(entries: Array<Eraftpb.Entry.Builder>) {
         val lastIdx = this.raftLog.lastIndex()
 
         for ((i, e) in entries.withIndex()) {
@@ -1041,6 +1210,7 @@ class Raft(config: Config, store: Storage) {
         // Regardless of maybe_commit's return, our caller will call bcastAppend.
         this.maybeCommit()
     }
+
     /// Attempts to advance the commit index. Returns true if the commit index
     /// changed (in which case the caller should call `r.bcast_append`).
     private fun maybeCommit(): Boolean {
@@ -1066,10 +1236,10 @@ class Raft(config: Config, store: Storage) {
     // false.
     // check_quorum_active also resets all recent_active to false.
     // check_quorum_active can only called by leader.
-    fun checkQuorumActive(): Boolean = this.prs.quorumRecentlyActive(this.id)
+    private fun checkQuorumActive(): Boolean = this.prs.quorumRecentlyActive(this.id)
 
     /// Issues a message to timeout immediately.
-    fun sendTimeoutNow(to: Long) {
+    private fun sendTimeoutNow(to: Long) {
         val toSend = buildMessage(to, MsgTimeoutNow, null)
         this.send(toSend)
     }
@@ -1171,10 +1341,6 @@ class Raft(config: Config, store: Storage) {
         step(buildMessage(INVALID_ID, fieldType, this.id))
     }
 
-    private fun step(to: Long, fieldType: Eraftpb.MessageType) {
-        step(buildMessage(to, fieldType, null))
-    }
-
     /// For a given message, append the entries to the log.
     private fun handleAppendEntries(m: Eraftpb.Message.Builder) {
         if (this.pendingRequestSnapshot != INVALID_INDEX) {
@@ -1248,7 +1414,7 @@ class Raft(config: Config, store: Storage) {
     /// Checks if logs are committed to its term.
     ///
     /// The check is useful usually when raft is leader.
-    fun commitToCurrentTerm(): Boolean = try { this.raftLog.term(this.raftLog.committed) == this.term } catch (e: RaftErrorException) { false }
+    private fun commitToCurrentTerm(): Boolean = try { this.raftLog.term(this.raftLog.committed) == this.term } catch (e: RaftErrorException) { false }
 
     /// Commit that the Raft peer has applied up to the given index.
     ///
@@ -1359,5 +1525,22 @@ class Raft(config: Config, store: Storage) {
         this.batchAppend = batchAppend
     }
 
+    // responseToReadIndexReq constructs a response for `req`. If `req` comes from the peer
+    // itself, a blank value will be returned.
+    private fun responseToReadIndexReq(req: Eraftpb.Message.Builder, readIndex: Long): Eraftpb.Message.Builder? {
+        return if (req.from == INVALID_ID || req.from == this@Raft.id) {
+            // from local member
+            val newRs = ReadState(readIndex, req.entriesBuilderList[0].data)
+            this@Raft.readStates.add(newRs)
+            null
+        } else {
+            Eraftpb.Message.newBuilder().apply {
+                this.msgType = MsgReadIndexResp
+                this.to = req.from
+                this.index = index
+                this.addAllEntries(req.entriesList)
+            }
+        }
+    }
 
 }

@@ -60,7 +60,7 @@ class Progress {
         this.ins = Inflights(insSize)
     }
 
-    fun resetState(state: ProgressState) {
+    private fun resetState(state: ProgressState) {
         this.paused = false
         this.pendingSnapshot = 0
         this.state = state
@@ -130,7 +130,7 @@ class Progress {
     }
 
     /// Resume progress
-    private fun resume() {
+    fun resume() {
         this.paused = false
     }
 
