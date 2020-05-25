@@ -1,11 +1,5 @@
 package com.mamba.exception
 
-/**
- *
- * @author mcw
- * @date 2020/04/10 14:17
- *
- */
 enum class RaftError(val desc: String) {
 
     /// The node exists, but should not.
