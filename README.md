@@ -1,2 +1,2 @@
 # raft-kt
-raft consensus algorithm base on kotiln
+The Raft consensus algorithm
