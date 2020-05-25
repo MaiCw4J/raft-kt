@@ -651,9 +651,8 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
                     if (e.entryType == Eraftpb.EntryType.EntryConfChange) {
                         if (this.hasPendingConf()) {
                             logger.info { "propose conf entry ignored since pending unapplied configuration" }
-                            m.setEntries(
-                                i,
-                                Eraftpb.Entry.newBuilder().apply { this.entryType = Eraftpb.EntryType.EntryNormal })
+                            val entry = Eraftpb.Entry.newBuilder().apply { this.entryType = Eraftpb.EntryType.EntryNormal }
+                            m.setEntries(i, entry)
                         } else {
                             this.pendingConfIndex = this.raftLog.lastIndex() + i + 1
                         }
@@ -680,23 +679,7 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
                     this.bcastHeartbeatWithCtx(ctx)
                 } else {
                     // there is only one voting member (the leader) in the cluster or LeaseBased Read
-                    val readIdx = this.raftLog.committed
-                    if (m.from == INVALID_ID || m.from == this.id) {
-                        // from local member
-                        val rs = ReadState(
-                            index = readIdx,
-                            requestCtx = m.entriesList.first().data
-                        )
-                        this.readStates.push(rs)
-                    } else {
-                        Eraftpb.Message.newBuilder().run {
-                            this.msgType = MsgReadIndexResp
-                            this.to = m.from
-                            this.index = readIdx
-                            this.addAllEntries(m.entriesList)
-                            this@Raft.send(this)
-                        }
-                    }
+                    this.responseToReadIndexReq(m, this.raftLog.committed)
                 }
                 return
             }
@@ -788,23 +771,12 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
                     this.sendAppend(m.from, from)
                 }
 
-                if (this.readOnly.option != ReadOnlyOption.Safe || m.context.isEmpty) {
+                if (this.readOnly.option != ReadOnlyOption.Safe) {
                     return
                 }
 
-                val recvAck = this.readOnly.recvAck(m)
-                if (recvAck == null || !prs.hasQuorum(recvAck)) {
-                    return
-                }
-
-                val rss = this.readOnly.advance(m.context, this.logger)
-                if (rss != null && rss.isNotEmpty()) {
-                    rss.forEach {
-                        this.responseToReadIndexReq(it.req, it.index)?.run {
-                            this@Raft.send(this)
-                        }
-                    }
-                }
+                // maybe have need to handle readIndex response
+                this.handleReadIndexAdvance(m.from, m.context)
             }
             MsgSnapStatus -> {
                 if (from.state == ProgressState.Snapshot) {
@@ -1509,6 +1481,10 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
             this.bcastAppend()
         }
 
+        // The quorum size is now smaller, consider to response some read requests.
+        // If there is only one peer, all pending read requests must be response.
+        this.handleReadIndexAdvance(this.id, this.readOnly.lastPendingRequestCtx())
+
         // If the removed node is the lead_transferee, then abort the leadership transferring.
         if (this.state == StateRole.Leader) {
             this.leadTransferee?.run {
@@ -1556,18 +1532,40 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
 
     // responseToReadIndexReq constructs a response for `req`. If `req` comes from the peer
     // itself, a blank value will be returned.
-    private fun responseToReadIndexReq(req: Eraftpb.Message.Builder, readIndex: Long): Eraftpb.Message.Builder? {
-        return if (req.from == INVALID_ID || req.from == this@Raft.id) {
+    private fun responseToReadIndexReq(req: Eraftpb.Message.Builder, readIndex: Long) {
+        if (req.from == INVALID_ID || req.from == this@Raft.id) {
             // from local member
-            val newRs = ReadState(readIndex, req.entriesBuilderList[0].data)
+            val newRs = ReadState(
+                index = readIndex,
+                requestCtx = req.entriesBuilderList[0].data
+            )
             this@Raft.readStates.add(newRs)
-            null
         } else {
-            Eraftpb.Message.newBuilder().apply {
+            Eraftpb.Message.newBuilder().run {
                 this.msgType = MsgReadIndexResp
                 this.to = req.from
                 this.index = index
                 this.addAllEntries(req.entriesList)
+                this@Raft.send(this)
+            }
+        }
+    }
+
+    // handle readIndex response
+    private fun handleReadIndexAdvance(id: Long, ctx: ByteString?) {
+        if (ctx == null || ctx.isEmpty) {
+            return
+        }
+
+        val recvAck = this.readOnly.recvAck(id, ctx)
+        if (recvAck == null || !prs.hasQuorum(recvAck)) {
+            return
+        }
+
+        val rss = this.readOnly.advance(ctx, this.logger)
+        if (rss != null && rss.isNotEmpty()) {
+            rss.forEach {
+                this.responseToReadIndexReq(it.req, it.index)
             }
         }
     }

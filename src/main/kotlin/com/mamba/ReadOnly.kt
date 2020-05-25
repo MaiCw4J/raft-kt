@@ -59,9 +59,9 @@ class ReadOnly {
     /// Notifies the ReadOnly struct that the raft state machine received
     /// an acknowledgment of the heartbeat that attached with the read only request
     /// context.
-    fun recvAck(m: Eraftpb.Message.Builder): Set<Long>? {
-        return this.pendingReadIndex[m.context]?.let {
-            it.acks.add(m.from)
+    fun recvAck(id: Long, ctx: ByteString): Set<Long>? {
+        return this.pendingReadIndex[ctx]?.let {
+            it.acks.add(id)
             it.acks
         }
     }
@@ -69,7 +69,7 @@ class ReadOnly {
     /// Advances the read only request queue kept by the ReadOnly struct.
     /// It de queues the requests until it finds the read only request that has
     /// the same context as the given `m`.
-    fun advance(ctx: ByteString?, logger: KLogger): Vec<ReadIndexStatus>? {
+    fun advance(ctx: ByteString, logger: KLogger): Vec<ReadIndexStatus>? {
         var index: Int? = null
         this.readIndexQueue.forEachIndexed { i, x ->
             if (!this.pendingReadIndex.containsKey(x)) {
