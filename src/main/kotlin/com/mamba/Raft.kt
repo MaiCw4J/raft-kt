@@ -1272,8 +1272,9 @@ class Raft<STORAGE : Storage> {
         logger.info { "became pre-candidate at term ${this.term}" }
     }
 
-    private fun numPendingConf(entries: Vec<Eraftpb.Entry>): Int =
-        entries.count { it.entryType == Eraftpb.EntryType.EntryConfChange }
+    private fun numPendingConf(entries: Vec<Eraftpb.Entry>): Int  {
+        return entries.count { it.entryType == Eraftpb.EntryType.EntryConfChange }
+    }
 
     // send persists state to stable storage and then sends to its mailbox.
     private fun send(m: Eraftpb.Message.Builder) {
