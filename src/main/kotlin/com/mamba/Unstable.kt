@@ -35,21 +35,9 @@ class Unstable {
     /// Returns the term of the entry at index idx, if there is any.
     fun maybeTerm(idx: Long): Long? {
         return if (idx < offset) {
-            snapshot?.metadata?.run {
-                if (idx == index) {
-                    term
-                } else {
-                    null
-                }
-            }
+            snapshot?.metadata?.takeIf { idx == it.index }?.term
         } else {
-            maybeLastIndex()?.run {
-                if (idx > this) {
-                    null
-                } else {
-                    entries[(idx - offset).toInt()].term
-                }
-            }
+            this.maybeLastIndex()?.takeIf { idx <= it }?.let { entries[(idx - offset).toInt()].term }
         }
     }
 
