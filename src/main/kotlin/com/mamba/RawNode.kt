@@ -119,8 +119,7 @@ class RawNode<STORAGE : Storage> {
             Eraftpb.ConfChangeType.AddNode -> this.raft.addVoterOrLearner(cc.nodeId, ProgressRole.VOTER)
             Eraftpb.ConfChangeType.AddLearnerNode -> this.raft.addVoterOrLearner(cc.nodeId, ProgressRole.LEARNER)
             Eraftpb.ConfChangeType.RemoveNode -> this.raft.removeNode(cc.nodeId)
-            else -> { /* to do nothing */
-            }
+            else -> { /* to do nothing */ }
         }
 
         return this.raft.prs.configuration.toConfState()

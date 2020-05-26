@@ -336,7 +336,6 @@ class RaftLog<STORAGE : Storage> {
     /// entries after the index of snapshot.
     fun nextEntries(): Vec<Eraftpb.Entry>? = this.nextEntriesSince(this.applied)
 
-
     /// Attempts to set the stable up to a given index.
     fun stableTo(idx: Long, term: Long) = this.unstable.stableTo(idx, term)
 

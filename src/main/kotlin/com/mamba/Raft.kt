@@ -445,8 +445,7 @@ class Raft<STORAGE : Storage> {
                     logger.debug { "${this.term} ignored MsgTimeoutNow from ${m.from}" }
                 }
             }
-            else -> {
-            }
+            else -> { }
         }
     }
 
@@ -611,8 +610,7 @@ class Raft<STORAGE : Storage> {
                 // because the leader only handle MsgReadIndex after it has committed log entry in its term.
                 this.raftLog.maybeCommit(m.index, m.term)
             }
-            else -> {
-            }
+            else -> { }
         }
     }
 
@@ -684,8 +682,7 @@ class Raft<STORAGE : Storage> {
                 }
                 return
             }
-            else -> { /* to do nothing */
-            }
+            else -> { /* to do nothing */ }
         }
 
         val from = this.prs.progress[m.from]
@@ -844,8 +841,7 @@ class Raft<STORAGE : Storage> {
                     this.sendAppend(leadTransferee, pr)
                 }
             }
-            else -> { /* to do nothing */
-            }
+            else -> { /* to do nothing */ }
         }
     }
 
