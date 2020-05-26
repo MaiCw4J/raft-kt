@@ -62,7 +62,7 @@ data class SoftState(
     val raftState: StateRole
 )
 
-class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
+class Raft<STORAGE : Storage> {
     /// The current election term.
     var term: Long
 
@@ -161,7 +161,8 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
 
     private val logger = KotlinLogging.logger {}
 
-    init {
+    @Throws(RaftErrorException::class)
+    constructor(config: Config, store: STORAGE) {
         config.validate()
         val initialState = store.initialState()
         val confState = initialState.confState

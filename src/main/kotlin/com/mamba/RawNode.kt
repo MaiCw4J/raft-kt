@@ -17,6 +17,7 @@ class RawNode<STORAGE : Storage> {
     var ss: SoftState
     var hs: Eraftpb.HardState
 
+    @Throws(RaftErrorException::class)
     constructor(config: Config, store: STORAGE) {
         this.raft = Raft(config, store)
         this.hs = this.raft.hardState()
@@ -133,7 +134,7 @@ class RawNode<STORAGE : Storage> {
             raftError(RaftError.StepLocalMsg)
         }
 
-        if (this.raft.prs.progress[m.from] == null || !m.msgType.isResponseMsg()) {
+        if (this.raft.prs.progress[m.from] != null || !m.msgType.isResponseMsg()) {
             this.raft.step(m.toBuilder())
         }
 
