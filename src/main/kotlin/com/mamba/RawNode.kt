@@ -35,7 +35,7 @@ class RawNode<STORAGE : Storage> {
             }
         }
 
-        ready.entries?.run {
+        ready.entries.run {
             if (this.isNotEmpty()) {
                 val last = this.last()
                 this@RawNode.raft.raftLog.stableTo(last.index, last.term)
@@ -154,7 +154,7 @@ class RawNode<STORAGE : Storage> {
 
     /// Given an index, can determine if there is a ready state from that time.
     fun hasReadySince(applied: Long?): Boolean {
-        if (this.raft.msgs.isNotEmpty() || raft.raftLog.unstableEntries() != null) {
+        if (this.raft.msgs.isNotEmpty() || raft.raftLog.unstableEntries().let { it != null && it.isNotEmpty() }) {
             return true
         }
 

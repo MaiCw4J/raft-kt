@@ -12,20 +12,20 @@ class Ready {
 
     val readStates: List<ReadState>
 
-    val entries: List<Eraftpb.Entry>?
+    val entries: List<Eraftpb.Entry>
 
     val snapshot: Eraftpb.Snapshot?
 
     /// CommittedEntries specifies entries to be committed to a
     /// store/state-machine. These have previously been committed to stable
     /// store.
-    val committedEntries: List<Eraftpb.Entry>?
+    val committedEntries: List<Eraftpb.Entry>
 
     /// Messages specifies outbound messages to be sent AFTER Entries are
     /// committed to stable storage.
     /// If it contains a MsgSnap message, the application MUST report back to raft
     /// when the snapshot has been received or has failed by calling ReportSnapshot.
-    val messages: List<Eraftpb.Message>?
+    val messages: List<Eraftpb.Message>
 
     val mustSync: Boolean
 
@@ -36,11 +36,11 @@ class Ready {
         sinceIdx: Long?
     ) {
 
-        this.entries = raft.raftLog.unstableEntries()?.map { it.build() }
+        this.entries = raft.raftLog.unstableEntries()?.map { it.build() } ?: listOf()
 
         val transport = raft.msgs
         if (transport.isEmpty()) {
-            this.messages = null
+            this.messages = listOf()
         } else {
             this.messages = transport.map { it.build() }
             // clear already send message
@@ -51,7 +51,7 @@ class Ready {
             raft.raftLog.nextEntries()
         } else {
             raft.raftLog.nextEntriesSince(sinceIdx)
-        }
+        } ?: listOf()
 
         this.ss = if (raft.softState() != ss) ss else null
 
@@ -69,6 +69,5 @@ class Ready {
 
         // todo return immutable list
         this.readStates = raft.readStates
-
     }
 }
