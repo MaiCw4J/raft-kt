@@ -69,7 +69,7 @@ class ReadOnly {
     /// Advances the read only request queue kept by the ReadOnly struct.
     /// It de queues the requests until it finds the read only request that has
     /// the same context as the given `m`.
-    fun advance(ctx: ByteString, logger: KLogger): Vec<ReadIndexStatus>? {
+    fun advance(ctx: ByteString, logger: KLogger): Vec<ReadIndexStatus> {
         var index: Int? = null
         this.readIndexQueue.forEachIndexed { i, x ->
             if (!this.pendingReadIndex.containsKey(x)) {
@@ -81,15 +81,18 @@ class ReadOnly {
             }
         }
 
-        return index?.let {
-            val rss = vec<ReadIndexStatus>()
-            for (i in 0..it) {
-                val rs = this.readIndexQueue.pollFirst()
-                val status = this.pendingReadIndex.remove(rs)!!
-                rss.add(status)
-            }
-            rss
+        // not found readIndex request
+        if (index == null) {
+            return vec()
         }
+
+        val rss = vec<ReadIndexStatus>()
+        for (i in 0..index!!) {
+            val rs = this.readIndexQueue.pollFirst()
+            val status = this.pendingReadIndex.remove(rs)!!
+            rss.add(status)
+        }
+        return rss
     }
 
 }

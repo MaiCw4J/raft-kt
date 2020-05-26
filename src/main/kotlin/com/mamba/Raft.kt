@@ -1562,11 +1562,8 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
             return
         }
 
-        val rss = this.readOnly.advance(ctx, this.logger)
-        if (rss != null && rss.isNotEmpty()) {
-            rss.forEach {
-                this.responseToReadIndexReq(it.req, it.index)
-            }
+        this.readOnly.advance(ctx, this.logger).forEach {
+            this.responseToReadIndexReq(it.req, it.index)
         }
     }
 
