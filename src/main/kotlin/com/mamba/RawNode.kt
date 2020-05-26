@@ -153,19 +153,27 @@ class RawNode<STORAGE : Storage> {
 
     /// Given an index, can determine if there is a ready state from that time.
     fun hasReadySince(applied: Long?): Boolean {
-        if (this.raft.msgs.isNotEmpty() || raft.raftLog.unstableEntries().let { it != null && it.isNotEmpty() }) {
+        // There are some messages that need to be sent to the peer
+        if (this.raft.msgs.isNotEmpty()) {
             return true
         }
 
+        // some log need to be persistent
+        if (raft.raftLog.unstableEntries().let { it != null && it.isNotEmpty() }) {
+            return true
+        }
+
+        // response readIndex request to client
         if (raft.readStates.isNotEmpty()) {
             return true
         }
 
-        val snap = this.snap()
-        if (snap != null && snap.metadata.index == 0L) {
+        // snapshot is available
+        if (this.snap()?.metadata?.index == 0L) {
             return true
         }
 
+        // has commit log to the state machine
         val hasUnstableEntries = if (applied != null) {
             this.raft.raftLog.hasNextEntriesSince(applied)
         } else {
@@ -184,6 +192,7 @@ class RawNode<STORAGE : Storage> {
             return true
         }
 
+        // nothing to do
         return false
     }
 

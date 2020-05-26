@@ -1396,9 +1396,9 @@ class Raft<STORAGE : Storage> {
 
     /// Returns a value representing the hard state at the time of calling.
     fun hardState(): Eraftpb.HardState = Eraftpb.HardState.newBuilder().apply {
-        this.commit = this@Raft.term
+        this.term = this@Raft.term
         this.vote = this@Raft.vote
-        this.commit = this@Raft.term
+        this.commit = this@Raft.raftLog.committed
     }.build()
 
     /// Checks if logs are committed to its term.
