@@ -100,7 +100,7 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
     /// The current votes for this node in an election.
     ///
     /// Reset when changing role.
-    val votes: MutableMap<Long, Boolean>
+    private val votes: MutableMap<Long, Boolean>
 
     /// The list of messages.
     val msgs: Vec<Eraftpb.Message.Builder>
@@ -141,18 +141,18 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
     /// Whether to check the quorum
     val checkQuorum: Boolean
 
-    /// Enable the prevote algorithm.
+    /// Enable the preVote algorithm.
     ///
     /// This enables a pre-election vote round on Candidates prior to disrupting the cluster.
     ///
     /// Enable this if greater cluster stability is preferred over faster elections.
-    val preVote: Boolean
+    private val preVote: Boolean
 
     var skipBcastCommit: Boolean
     var batchAppend: Boolean
 
-    val heartbeatTimeout: Int
-    val electionTimeout: Int
+    private val heartbeatTimeout: Int
+    private val electionTimeout: Int
 
     // randomized_election_timeout is a random number between
     // [electionTimeout, electionTimeout * 2]. It gets reset
@@ -233,13 +233,13 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
             return false
         }
         electionElapsed = 0
-        stepItSelf(MsgHup)
+        stepLocal(MsgHup)
         return true
     }
 
     // tick_heartbeat is run by leaders to send a MsgBeat after self.heartbeat_timeout.
     // Returns true to indicate that there will probably be some readiness need to be handled.
-    fun tickHeartbeat(): Boolean {
+    private fun tickHeartbeat(): Boolean {
         heartbeatElapsed++
         electionElapsed++
         var hasReady = false
@@ -247,7 +247,7 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
             electionElapsed = 0
             if (checkQuorum) {
                 hasReady = true
-                stepItSelf(MsgCheckQuorum)
+                stepLocal(MsgCheckQuorum)
             }
             if (state == StateRole.Leader) {
                 abortLeaderTransfer()
@@ -261,7 +261,7 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
         if (heartbeatElapsed >= heartbeatTimeout) {
             heartbeatElapsed = 0
             hasReady = true
-            stepItSelf(MsgBeat)
+            stepLocal(MsgBeat)
         }
 
         return hasReady
@@ -675,7 +675,7 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
                     // a user-supplied value.
                     // This would allow multiple reads to piggyback on the same message.
                     val ctx = m.entriesList.first().data
-                    this.readOnly.addRequest(this.raftLog.committed, m, this.id)
+                    this.readOnly.addRequest(this.raftLog.committed, this.id, m)
                     this.bcastHeartbeatWithCtx(ctx)
                 } else {
                     // there is only one voting member (the leader) in the cluster or LeaseBased Read
@@ -1329,8 +1329,8 @@ class Raft<STORAGE : Storage>(config: Config, store: STORAGE) {
         logger.info { "became follower at term ${this.term}" }
     }
 
-    private fun stepItSelf(fieldType: Eraftpb.MessageType) {
-        step(buildMessage(INVALID_ID, fieldType, this.id))
+    private fun stepLocal(messageType: Eraftpb.MessageType) {
+        step(buildMessage(INVALID_ID, messageType, this.id))
     }
 
     /// For a given message, append the entries to the log.

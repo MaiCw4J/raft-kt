@@ -40,8 +40,11 @@ class ReadOnly {
     /// the read only request.
     ///
     /// `m` is the original read only request message from the local or remote node.
-    fun addRequest(index: Long, m: Eraftpb.Message.Builder, id: Long) {
+    fun addRequest(index: Long, id: Long, m: Eraftpb.Message.Builder) {
         val ctx = m.entriesList.first().data
+        if (ctx == null || ctx.isEmpty) {
+            return
+        }
         if (pendingReadIndex.containsKey(ctx)) {
             return
         }
