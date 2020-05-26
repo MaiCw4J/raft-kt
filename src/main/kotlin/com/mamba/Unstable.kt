@@ -44,30 +44,23 @@ class Unstable {
     /// Moves the stable offset up to the index. Provided that the index
     /// is in the same election term.
     fun stableTo(idx: Long, term: Long) {
-        maybeTerm(idx).let {
-            if (it == term && idx > offset) {
-                val start = idx + 1 - offset
-                this.entries.drain(start.toInt())
-                offset = idx + 1
-            }
+        val t = maybeTerm(idx) ?: return
+
+        if (t == term && idx > this.offset) {
+            val start = idx + 1 - this.offset
+            this.entries.drain(start.toInt())
+            this.offset = idx + 1
         }
     }
-
 
     /// Removes the snapshot from self if the index of the snapshot matches
-    fun stableSnapTo(idx: Long) {
-        snapshot?.metadata?.index.let {
-            if (idx == it) {
-                snapshot = null
-            }
-        }
-    }
+    fun stableSnapTo(idx: Long) = snapshot?.metadata?.index?.run { if (this == idx) snapshot = null }
 
     /// From a given snapshot, restores the snapshot to self, but doesn't unpack.
     fun restore(snap: Eraftpb.Snapshot) {
-        entries.clear()
-        offset = snap.metadata.index
-        snapshot = snap
+        this.entries.clear()
+        this.offset = snap.metadata.index
+        this.snapshot = snap
     }
 
     /// Append entries to unstable, truncate local block first if overlapped.
