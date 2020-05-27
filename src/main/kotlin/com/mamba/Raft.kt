@@ -1323,7 +1323,6 @@ class Raft<STORAGE : Storage> {
         this.leaderId = leaderId
         this.state = StateRole.Follower
         this.pendingRequestSnapshot = oldPendingRequestSnapshot
-
         logger.info { "became follower at term ${this.term}" }
     }
 

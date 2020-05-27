@@ -80,7 +80,6 @@ class RaftLog<STORAGE : Storage> {
     /// Panics if the store doesn't have a last index.
     fun lastIndex(): Long = this.unstable.maybeLastIndex() ?: this.store.lastIndex()
 
-
     /// Finds the index of the conflict.
     ///
     /// It returns the first index of conflicting entries between the existing
@@ -97,7 +96,7 @@ class RaftLog<STORAGE : Storage> {
     ///
     /// The first entry MUST have an index equal to the argument 'from'.
     /// The index of the given entries MUST be continuously increasing.
-    fun findConflict(entries: Array<Eraftpb.Entry.Builder>): Long {
+    private fun findConflict(entries: Array<Eraftpb.Entry.Builder>): Long {
         val lastIdx = this.lastIndex()
         for (e in entries) {
             if (!this.matchTerm(e.index, e.term)) {
@@ -116,7 +115,6 @@ class RaftLog<STORAGE : Storage> {
     } catch (e: RaftErrorException) {
         false
     }
-
 
     /// Returns None if the entries cannot be appended. Otherwise,
     /// it returns Some((conflict_index, last_index)).
@@ -205,7 +203,7 @@ class RaftLog<STORAGE : Storage> {
 
         val length = this.lastIndex() + 1 - firstIndex
         if (low < firstIndex || high > firstIndex + length) {
-            fatal(logger, "slice[$low,$high] out of bound[$firstIndex,${this.lastIndex()}]")
+            fatal(logger, "slice[$low, $high] out of bound[$firstIndex,${this.lastIndex()}]")
         }
         return null
     }
@@ -237,7 +235,7 @@ class RaftLog<STORAGE : Storage> {
                     RaftError.Storage_Compacted -> throw e
                     RaftError.Storage_Unavailable -> fatal(
                         logger,
-                        "entries[$low:$unstableHigh] is unavailable from storage"
+                        "entries[$low: $unstableHigh] is unavailable from storage"
                     )
                     else -> fatal(logger, "unexpected error: ${e.error}")
                 }
@@ -257,26 +255,25 @@ class RaftLog<STORAGE : Storage> {
 
     /// Attempts to commit the index and term and returns whether it did.
     fun maybeCommit(maxIdx: Long, term: Long): Boolean {
-        val r = maxIdx > this.committed && try {
-            this.term(maxIdx)
+        val maybe = maxIdx > this.committed && try {
+            this.term(maxIdx) == term
         } catch (e: RaftErrorException) {
-            0
-        } == term
-        if (r) {
+            false
+        }
+        if (maybe) {
             if (logger.isDebugEnabled) {
                 logger.debug { "committing index $maxIdx" }
             }
             this.commitTo(maxIdx)
         }
-
-        return r
+        return maybe
     }
 
     /// Restores the current log from a snapshot.
     fun restore(snapshot: Eraftpb.Snapshot) {
-        logger.info { "starts to restore snapshot [index: ${snapshot.metadata.index}, term: ${snapshot.metadata.term}]" }
-
-        this.committed = snapshot.metadata.index
+        val metadata = snapshot.metadata
+        logger.info { "starts to restore snapshot [index: ${metadata.index}, term: ${metadata.term}]" }
+        this.committed = metadata.index
         this.unstable.restore(snapshot)
     }
 
@@ -286,8 +283,7 @@ class RaftLog<STORAGE : Storage> {
     /// later term is more up-to-date. If the logs end with the same term, then
     /// whichever log has the larger last_index is more up-to-date. If the logs are
     /// the same, the given log is up-to-date.
-    fun isUpToDate(lastIdx: Long, term: Long): Boolean =
-        term > this.lastTerm() || (term == this.lastTerm() && lastIdx >= this.lastIndex())
+    fun isUpToDate(lastIdx: Long, term: Long) = term > this.lastTerm() || (term == this.lastTerm() && lastIdx >= this.lastIndex())
 
     /// Returns the current snapshot
     fun snapshot(requestIdx: Long): Eraftpb.Snapshot {
