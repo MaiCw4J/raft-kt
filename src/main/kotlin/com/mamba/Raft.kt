@@ -1102,7 +1102,7 @@ class Raft<STORAGE : Storage> {
             }
             return true
         } catch (e: RaftErrorException) {
-            if (e.error == RaftError.Storage_SnapshotTemporarilyUnavailable) {
+            if (e.error == RaftError.StorageSnapshotTemporarilyUnavailable) {
                 if (logger.isDebugEnabled) {
                     logger.debug { "failed to send snapshot to $to because snapshot is temporarily unavailable" }
                 }

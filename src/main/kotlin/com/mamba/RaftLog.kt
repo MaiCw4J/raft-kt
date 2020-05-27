@@ -60,7 +60,7 @@ class RaftLog<STORAGE : Storage> {
             this.store.term(idx)
         } catch (e: RaftErrorException) {
             when (e.error) {
-                RaftError.Storage_Compacted, RaftError.Storage_Unavailable -> throw e
+                RaftError.StorageCompacted, RaftError.StorageUnavailable -> throw e
                 else -> fatal(logger, "unexpected error: ${e.error.name}")
             }
         }
@@ -198,7 +198,7 @@ class RaftLog<STORAGE : Storage> {
         }
         val firstIndex = this.firstIndex()
         if (low < firstIndex) {
-            return RaftError.Storage_Compacted
+            return RaftError.StorageCompacted
         }
 
         val length = this.lastIndex() + 1 - firstIndex
@@ -232,8 +232,8 @@ class RaftLog<STORAGE : Storage> {
                 }
             } catch (e: RaftErrorException) {
                 when (e.error) {
-                    RaftError.Storage_Compacted -> throw e
-                    RaftError.Storage_Unavailable -> fatal(
+                    RaftError.StorageCompacted -> throw e
+                    RaftError.StorageUnavailable -> fatal(
                         logger,
                         "entries[$low: $unstableHigh] is unavailable from storage"
                     )

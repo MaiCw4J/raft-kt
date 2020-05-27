@@ -21,20 +21,20 @@ enum class RaftError(val desc: String) {
     ConfigInvalid("The configuration is invalid [%s]"),
 
     /// The storage was compacted and not accessible
-    Storage_Compacted("log compacted"),
+    StorageCompacted("log compacted"),
 
     /// The log is not available.
-    Storage_Unavailable("log unavailable"),
+    StorageUnavailable("log unavailable"),
 
     /// The snapshot is out of date.
-    Storage_SnapshotOutOfDate("snapshot out of date"),
+    StorageSnapshotOutOfDate("snapshot out of date"),
 
     /// The snapshot is being created.
-    Storage_SnapshotTemporarilyUnavailable("snapshot is temporarily unavailable"),
+    StorageSnapshotTemporarilyUnavailable("snapshot is temporarily unavailable"),
 
     RequestSnapshotDropped(""),
 
     /// Some other error occurred.
-    Storage_Other("unknown error");
+    StorageOther("unknown error");
 
 }
