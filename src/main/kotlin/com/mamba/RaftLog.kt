@@ -173,7 +173,7 @@ class RaftLog<STORAGE : Storage> {
             fatal(logger, "after $after is out of range [committed ${this.committed}]")
         }
 
-        this.unstable.truncateAndAppend(entries);
+        this.unstable.truncateAndAppend(entries)
         return this.lastIndex()
     }
 
