@@ -537,6 +537,7 @@ class Raft<STORAGE : Storage> {
             this.msgType = MsgHeartbeatResponse
             this.to = m.from
             this.context = m.context
+            this.commit = this@Raft.raftLog.committed
             this@Raft.send(this)
         }
     }
@@ -696,6 +697,10 @@ class Raft<STORAGE : Storage> {
         when (m.msgType) {
             MsgAppendResponse -> {
                 from.recentActive = true
+
+                // update followers committed index via append response
+                from.updateCommitted(m.commit)
+
                 if (m.reject) {
                     if (logger.isDebugEnabled) {
                         logger.debug("received msgAppend rejection last index ${m.rejectHint}, from ${m.from}, index ${m.index}")
@@ -757,6 +762,10 @@ class Raft<STORAGE : Storage> {
             }
             MsgHeartbeatResponse -> {
                 from.recentActive = true
+
+                // update followers committed index via heartbeat response
+                from.updateCommitted(m.commit)
+
                 from.resume()
 
                 // free one slot for the full inflights window to allow progress.
@@ -1345,6 +1354,7 @@ class Raft<STORAGE : Storage> {
                 this.msgType = MsgAppendResponse
                 this.to = m.from
                 this.index = this@Raft.raftLog.committed
+                this.commit = this@Raft.raftLog.committed
                 this@Raft.send(this)
             }
             return
@@ -1365,6 +1375,7 @@ class Raft<STORAGE : Storage> {
                 this.reject = true
                 this.rejectHint = this@Raft.raftLog.lastIndex()
             }
+            this.commit = this@Raft.raftLog.committed
             this@Raft.send(this)
         }
     }

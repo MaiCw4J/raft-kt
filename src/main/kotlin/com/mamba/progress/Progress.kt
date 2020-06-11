@@ -13,6 +13,9 @@ class Progress {
     /// The next index to apply
     var nextIdx: Long
 
+    /// Committed index in raft_log
+    var committed: Long
+
     /// When in ProgressStateProbe, leader sends at most one replication message
     /// per heartbeat interval. It also probes actual progress of the follower.
     ///
@@ -57,6 +60,7 @@ class Progress {
     constructor(nextIdx: Long, insSize: Int) {
         this.matched = 0
         this.nextIdx = nextIdx
+        this.committed = 0
         this.state = ProgressState.Probe
         this.paused = false
         this.pendingSnapshot = 0
@@ -89,7 +93,7 @@ class Progress {
         // the pending snapshot has been sent to this peer successfully, then
         // probes from pendingSnapshot + 1.
         if (this.state == ProgressState.Snapshot) {
-            val prePendingSnapshot = this.pendingRequestSnapshot;
+            val prePendingSnapshot = this.pendingRequestSnapshot
             this.resetState(ProgressState.Probe)
             this.nextIdx = max(this.matched, prePendingSnapshot) + 1
         } else {
@@ -205,6 +209,13 @@ class Progress {
             }
             ProgressState.Probe -> this.pause()
             ProgressState.Snapshot -> throw PanicException("updating progress state in unhandled state ${this.state}")
+        }
+    }
+
+    /// update committed_index.
+    fun updateCommitted(committedIdx: Long) {
+        if (committedIdx > this.committed) {
+            this.committed = committedIdx
         }
     }
 
