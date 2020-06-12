@@ -139,7 +139,7 @@ class Raft<STORAGE : Storage> {
     var heartbeatElapsed: Int
 
     /// Whether to check the quorum
-    val checkQuorum: Boolean
+    private val checkQuorum: Boolean
 
     /// Enable the preVote algorithm.
     ///
@@ -158,6 +158,9 @@ class Raft<STORAGE : Storage> {
     // [electionTimeout, electionTimeout * 2]. It gets reset
     // when raft changes its state to follower or candidate.
     var randomizedElectionTimeout: Int
+
+    /// The election priority of this node.
+    var priority: Long
 
     private val logger = KotlinLogging.logger {}
 
@@ -194,6 +197,7 @@ class Raft<STORAGE : Storage> {
         this.randomizedElectionTimeout = 0
         this.skipBcastCommit = config.skipBcastCommit
         this.batchAppend = config.batchAppend
+        this.priority = config.priority
 
         for (id in voters) {
             this.prs.insertVoterOrLearner(id, Progress(1, this.maxInflight), ProgressRole.VOTER)
@@ -357,8 +361,10 @@ class Raft<STORAGE : Storage> {
                         (this.vote == INVALID_ID && this.leaderId == INVALID_ID) ||
                         // ...or this is a PreVote for a future term...
                         (m.msgType == MsgRequestPreVote && m.term > this.term)) &&
-                        // raft log must up to date
-                        this.raftLog.isUpToDate(m.index, m.logTerm)
+                        // ...raft log must up to date...
+                        this.raftLog.isUpToDate(m.index, m.logTerm) &&
+                        // ...node priority must less than or equal to candidate...
+                        (m.index > this.raftLog.lastIndex() || this.priority <= m.priority)
                 if (canVote) {
                     // When responding to Msg{Pre,}Vote messages we include the term
                     // from the message, not the local term. To see why consider the
@@ -1290,6 +1296,7 @@ class Raft<STORAGE : Storage> {
         if (logger.isDebugEnabled) {
             logger.debug { "Sending from ${this.id} to ${m.to}" }
         }
+        m.from = this.id
         when (m.msgType) {
             MsgRequestVote, MsgRequestPreVote, MsgRequestVoteResponse, MsgRequestPreVoteResponse -> {
                 if (m.term == 0L) {
@@ -1307,6 +1314,9 @@ class Raft<STORAGE : Storage> {
                     //   same reasons MsgPreVote is
                     fatal(logger, "term should be set when sending ${m.msgType.name}")
                 }
+
+                // send current priority when vote request
+                if (m.msgType == MsgRequestVote || m.msgType == MsgRequestPreVote) m.priority = this.priority
             }
             else -> {
                 if (m.term != 0L) {
@@ -1321,7 +1331,6 @@ class Raft<STORAGE : Storage> {
                 }
             }
         }
-        m.from = this.id
         this.msgs.add(m)
     }
 

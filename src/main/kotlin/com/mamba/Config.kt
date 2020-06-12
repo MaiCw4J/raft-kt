@@ -62,6 +62,9 @@ class Config {
     /// Batches every append msg if any append msg already exists
     val batchAppend: Boolean
 
+    /// The election priority of this node.
+    val priority: Long
+
     constructor(id: Long) {
         this.id = id
         this.heartbeatTick = 2
@@ -74,6 +77,7 @@ class Config {
         this.readOnlyOption = ReadOnlyOption.Safe
         this.skipBcastCommit = false
         this.batchAppend = false
+        this.priority = 0
     }
 
     /// Runs validations against the config.

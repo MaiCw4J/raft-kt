@@ -289,4 +289,9 @@ class RawNode<STORAGE : Storage> {
     /// Set whether to batch append msg at runtime.
     fun setBatchAppend(batchAppend: Boolean) = this.raft.batchAppend(batchAppend)
 
+    /// Set priority of node.
+    fun setPriority(priority: Long) {
+        this.raft.priority = priority
+    }
+
 }
