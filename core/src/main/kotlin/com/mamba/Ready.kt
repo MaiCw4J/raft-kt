@@ -57,7 +57,7 @@ class Ready {
 
         val rhs = raft.hardState()
         if (rhs != hs) {
-            this.mustSync = rhs.vote != hs.vote || rhs.term != hs.term
+            this.mustSync = rhs.vote != hs.vote || rhs.term != hs.term || this.entries.isNotEmpty()
             this.hs = rhs
         } else {
             // default
