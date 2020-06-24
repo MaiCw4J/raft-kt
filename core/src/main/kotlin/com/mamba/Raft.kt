@@ -1,14 +1,14 @@
 package com.mamba
 
 import com.google.protobuf.ByteString
+import com.mamba.constanst.CandidacyStatus
 import com.mamba.constanst.ProgressRole
 import com.mamba.constanst.ProgressState
 import com.mamba.constanst.StateRole
 import com.mamba.exception.RaftError
 import com.mamba.exception.RaftErrorException
-import com.mamba.progress.CandidacyStatus
 import com.mamba.progress.Progress
-import com.mamba.progress.ProgressSet
+import com.mamba.progress.Tracker
 import com.mamba.storage.Storage
 import eraftpb.Eraftpb
 import eraftpb.Eraftpb.MessageType.*
@@ -88,7 +88,7 @@ class Raft<STORAGE : Storage> {
     /// needs it to be included in a snapshot.
     var pendingRequestSnapshot: Long
 
-    var prs: ProgressSet
+    var prs: Tracker
 
     /// The current role of this node.
     var state: StateRole
@@ -176,7 +176,7 @@ class Raft<STORAGE : Storage> {
         this.raftLog = RaftLog(store)
         this.maxInflight = config.maxInflightMsgs
         this.maxMsgSize = config.maxSizePerMsg
-        this.prs = ProgressSet(voters.size, learners.size)
+        this.prs = Tracker(voters.size, learners.size)
         this.pendingRequestSnapshot = INVALID_INDEX
         this.state = StateRole.Follower
         this.promotable = false

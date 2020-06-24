@@ -1,5 +1,6 @@
 package com.mamba.progress
 
+import com.mamba.constanst.CandidacyStatus
 import com.mamba.constanst.ProgressRole
 import com.mamba.exception.RaftError
 import com.mamba.majority
@@ -7,24 +8,9 @@ import com.mamba.raftError
 import eraftpb.Eraftpb
 import mu.KotlinLogging
 
-
-/// The status of an election according to a Candidate node.
-///
-/// This is returned by `progress_set.election_status(vote_map)`
-enum class CandidacyStatus {
-    /// The election has been won by this Raft.
-    Elected,
-
-    /// It is still possible to win the election.
-    Eligible,
-
-    /// It is no longer possible to win the election.
-    Ineligible,
-}
-
-/// `ProgressSet` contains several `Progress`es,
+/// `Tracker` contains several `Progress`es,
 /// which could be `Leader`, `Follower` and `Learner`.
-class ProgressSet {
+class Tracker {
     val progress: MutableMap<Long, Progress>
 
     /// The current configuration state of the cluster.
@@ -70,7 +56,7 @@ class ProgressSet {
             val matched = LongArray(this.size)
 
             for ((i, id) in this.withIndex()) {
-                matched[i] = this@ProgressSet.progress[id]!!.matched
+                matched[i] = this@Tracker.progress[id]!!.matched
             }
 
             // Reverse sort.
