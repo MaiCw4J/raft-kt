@@ -753,8 +753,7 @@ class Raft<STORAGE : Storage> {
                     // we have more entries to send, send as many messages as we
                     // can (without sending empty messages for the commit index)
                     @Suppress("ControlFlowWithEmptyBody")
-                    while (this.maybeSendAppend(m.from, from, false)) {
-                    }
+                    while (this.maybeSendAppend(m.from, from, false)) { }
 
                     // Transfer leadership is in progress.
                     val isTimeoutNow = this.leadTransferee != null &&

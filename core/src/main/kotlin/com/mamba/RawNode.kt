@@ -141,12 +141,10 @@ class RawNode<STORAGE : Storage> {
     }
 
     /// Given an index, creates a new Ready value from that index.
-    fun readySince(applied: Long): Ready =
-        Ready(this.raft, this.ss, this.hs, applied)
+    fun readySince(applied: Long): Ready = Ready(this.raft, this.ss, this.hs, applied)
 
     /// Ready returns the current point-in-time state of this RawNode.
-    fun ready(): Ready =
-        Ready(this.raft, this.ss, this.hs, null)
+    fun ready(): Ready = Ready(this.raft, this.ss, this.hs, null)
 
     /// Grabs the snapshot from the raft if available.
     fun snap(): Eraftpb.Snapshot? = this.raft.snap()
