@@ -1,58 +1,40 @@
 package com.mamba.progress
 
-import com.mamba.constanst.ProgressRole
-import com.mamba.exception.RaftError
-import com.mamba.majority
-import com.mamba.raftError
+import com.mamba.quorum.MajorityConfiguration
 import eraftpb.Eraftpb
 
-
+/// Config reflects the configuration tracked in a ProgressTracker.
 class Configuration {
-    /// The voter set.
-    val votes: MutableSet<Long>
+    val votes: MajorityConfiguration
 
-    /// The learner set.
+    /// Learners is a set of IDs corresponding to the learners active in the
+    /// current configuration.
+    ///
+    /// Invariant: Learners and Voters does not intersect, i.e. if a peer is in
+    /// either half of the joint config, it can't be a learner; if it is a
+    /// learner it can't be in either half of the joint config. This invariant
+    /// simplifies the implementation since it allows peers to have clarity about
+    /// its current role without taking into account joint consensus.
     val learners: MutableSet<Long>
 
     constructor(votes: MutableSet<Long>, learners: MutableSet<Long>) {
-        this.votes = votes
+        this.votes = MajorityConfiguration(votes)
         this.learners = learners
     }
 
     constructor(voters: Int, learners: Int) {
-        this.votes = HashSet(voters)
+        this.votes = MajorityConfiguration(voters)
         this.learners = HashSet(learners)
     }
 
     constructor(confState: Eraftpb.ConfState) {
-        this.votes = confState.votersList.toHashSet()
+        this.votes = MajorityConfiguration(confState.votersList.toHashSet())
         this.learners = confState.learnersList.toHashSet()
     }
 
     fun toConfState(): Eraftpb.ConfState = Eraftpb.ConfState.newBuilder().apply {
-        this.addAllVoters(this@Configuration.votes)
+        this.addAllVoters(this@Configuration.votes.voters)
         this.addAllLearners(this@Configuration.learners)
     }.build()
-
-    /// Validates that the configuration is not problematic.
-    ///
-    /// Namely:
-    /// * There can be no overlap of voters and learners.
-    /// * There must be at least one voter.
-    fun valid() {
-        if (this.votes.isEmpty()) {
-            raftError(RaftError.ConfigInvalid, "There must be at least one voter.")
-        }
-        val intersect = (this.votes intersect this.learners).iterator()
-        if (intersect.hasNext()) {
-            raftError(RaftError.Exists, intersect.next(), ProgressRole.LEARNER.name)
-        }
-    }
-
-    fun hasQuorum(potentialQuorum: Set<Long>): Boolean =
-        (this.votes intersect potentialQuorum).size >= majority(this.votes.size)
-
-    /// Returns whether or not the given `id` is a member of this configuration.
-    fun contains(id: Long): Boolean = this.votes.contains(id) || this.learners.contains(id)
 
 }

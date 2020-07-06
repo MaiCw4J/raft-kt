@@ -1,9 +1,8 @@
 package com.mamba.progress
 
-import com.mamba.constanst.CandidacyStatus
 import com.mamba.constanst.ProgressRole
 import com.mamba.exception.RaftError
-import com.mamba.majority
+import com.mamba.quorum.VoteResult
 import com.mamba.raftError
 import eraftpb.Eraftpb
 import mu.KotlinLogging
@@ -24,54 +23,16 @@ class Tracker {
         this.configuration = Configuration(voters, learners)
     }
 
-    /// Returns the Candidate's eligibility in the current election.
-    ///
-    /// If it is still eligible, it should continue polling nodes and checking.
-    /// Eventually, the election will result in this returning either `Elected`
-    /// or `Ineligible`, meaning the election can be concluded.
-    fun candidacyStatus(votes: Map<Long, Boolean>): CandidacyStatus {
-        val accepts = mutableSetOf<Long>()
-        val rejects = mutableSetOf<Long>()
-
-        for (entry in votes.entries) {
-            if (entry.value) {
-                accepts.add(entry.key)
-            } else {
-                rejects.add(entry.key)
-            }
-        }
-
-        return when {
-            this.configuration.hasQuorum(accepts) -> CandidacyStatus.Elected
-            this.configuration.hasQuorum(rejects) -> CandidacyStatus.Ineligible
-            else -> CandidacyStatus.Eligible
-        }
-    }
-
     /// Returns the maximal committed index for the cluster.
     ///
     /// Eg. If the matched indexes are [2,2,2,4,5], it will return 2.
-    fun maximalCommittedIndex(): Long {
-        val matched = with(this.configuration.votes) {
-            val matched = LongArray(this.size)
-
-            for ((i, id) in this.withIndex()) {
-                matched[i] = this@Tracker.progress[id]!!.matched
-            }
-
-            // Reverse sort.
-            matched.sortDescending()
-
-            matched
-        }
-        return matched[majority(matched.size)]
-    }
+    fun maximalCommittedIndex(): Long  = this.configuration.votes.committedIndex { id -> this.progress[id]?.matched }
 
     /// Returns the ids of all known voters.
     ///
     /// **Note:** Do not use this for majority/quorum calculation. The Raft node may be
-    /// transitioning to a new configuration and have two qourums. Use `has_quorum` instead.
-    fun voterIds(): Set<Long> = this.configuration.votes
+    /// transitioning to a new configuration and have two quorum. Use `has_quorum` instead.
+    fun voterIds(): Set<Long> = this.configuration.votes.voters
 
     /// Returns the ids of all known learners.
     ///
@@ -91,7 +52,6 @@ class Tracker {
     /// transitioning to a new configuration and have two qourums. Use `has_quorum` instead.
     fun learners(): Map<Long, Progress> = this.progress.filter { this.learnerIds().contains(it.key) }
 
-
     /// Determines if the current quorum is active according to the this raft node.
     /// Doing this will set the `recent_active` of each peer to false.
     ///
@@ -99,12 +59,15 @@ class Tracker {
     fun quorumRecentlyActive(perspective: Long): Boolean {
         val active = hashSetOf<Long>()
         for ((id, pr) in this.voters()) {
-            if (id == perspective || pr.recentActive) {
+            if (id == perspective) {
+                pr.recentActive = true
+                active.add(id)
+            } else if (pr.recentActive) {
+                pr.recentActive = false
                 active.add(id)
             }
-            pr.recentActive = false
         }
-        return this.configuration.hasQuorum(active)
+        return this.hasQuorum(active)
     }
 
     private fun clear() {
@@ -118,7 +81,7 @@ class Tracker {
 
         for (id in metadata.confState.votersList) {
             this.progress[id] = Progress(nextIdx, maxInflight)
-            this.configuration.votes.add(id)
+            this.configuration.votes.voters.add(id)
         }
 
         for (id in metadata.confState.learnersList) {
@@ -130,7 +93,15 @@ class Tracker {
     /// Determine if a quorum is formed from the given set of nodes.
     ///
     /// This is the only correct way to verify you have reached a quorum for the whole group.
-    fun hasQuorum(potentialQuorum: Set<Long>): Boolean = this.configuration.hasQuorum(potentialQuorum)
+    fun hasQuorum(potentialQuorum: Set<Long>): Boolean {
+        return this.configuration.votes.voteResult { id ->
+            if (potentialQuorum.contains(id)) {
+                true
+            } else {
+                null
+            }
+        } == VoteResult.Won
+    }
 
     /// Determine itself
     fun hasQuorum(id: Long): Boolean = hasQuorum(setOf(id))
@@ -155,7 +126,7 @@ class Tracker {
         }
 
         val collection = when (role) {
-            ProgressRole.VOTER -> this.configuration.votes
+            ProgressRole.VOTER -> this.configuration.votes.voters
             ProgressRole.LEARNER -> this.configuration.learners
         }
 
@@ -173,7 +144,7 @@ class Tracker {
             logger.debug { "Removing peer with id = $id" }
         }
 
-        this.configuration.votes.remove(id)
+        this.configuration.votes.voters.remove(id)
         this.configuration.learners.remove(id)
 
         return this.progress.remove(id)
@@ -190,10 +161,17 @@ class Tracker {
             raftError(RaftError.NotExists, id, ProgressRole.LEARNER.name)
         }
 
-        if (!this.configuration.votes.add(id)) {
+        if (!this.configuration.votes.voters.add(id)) {
             // Already existed, the caller should know this was a noop.
             raftError(RaftError.Exists, id, ProgressRole.VOTER.name)
         }
     }
+
+    /// Returns the Candidate's eligibility in the current election.
+    ///
+    /// If it is still eligible, it should continue polling nodes and checking.
+    /// Eventually, the election will result in this returning either `Elected`
+    /// or `Ineligible`, meaning the election can be concluded.
+    fun voteResult(votes: Map<Long, Boolean>): VoteResult = this.configuration.votes.voteResult { id -> votes[id] }
 
 }

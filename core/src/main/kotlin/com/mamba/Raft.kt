@@ -1,7 +1,6 @@
 package com.mamba
 
 import com.google.protobuf.ByteString
-import com.mamba.constanst.CandidacyStatus
 import com.mamba.constanst.ProgressRole
 import com.mamba.constanst.ProgressState
 import com.mamba.constanst.StateRole
@@ -9,6 +8,7 @@ import com.mamba.exception.RaftError
 import com.mamba.exception.RaftErrorException
 import com.mamba.progress.Progress
 import com.mamba.progress.Tracker
+import com.mamba.quorum.VoteResult
 import com.mamba.storage.Storage
 import eraftpb.Eraftpb
 import eraftpb.Eraftpb.MessageType.*
@@ -444,7 +444,7 @@ class Raft<STORAGE : Storage> {
                 logger.info { "received ${if (acceptance) "rejection" else "acceptance"} from ${m.from}" }
 
                 this.registerVote(m.from, acceptance)
-                this.handleCandidacyStatus()
+                this.checkVotes()
             }
             MsgTimeoutNow -> {
                 if (logger.isDebugEnabled) {
@@ -521,9 +521,9 @@ class Raft<STORAGE : Storage> {
 
         this.prs.restoreSnapshotMeta(metadata, nextIdx, this.maxInflight)
         this.prs.progress[this.id]!!.matched = nextIdx - 1
-        if (this.prs.configuration.votes.contains(this.id)) {
+        if (this.prs.voterIds().contains(this.id)) {
             this.promotable = true
-        } else if (this.prs.configuration.learners.contains(this.id)) {
+        } else if (this.prs.learnerIds().contains(this.id)) {
             this.promotable = false
         }
 
@@ -945,7 +945,7 @@ class Raft<STORAGE : Storage> {
 
         this.registerVote(this.id, true)
 
-        if (handleCandidacyStatus() == CandidacyStatus.Elected) {
+        if (checkVotes() == VoteResult.Won) {
             // We won the election after voting for ourselves (which must mean that
             // this is a single-node cluster).
             return
@@ -973,9 +973,9 @@ class Raft<STORAGE : Storage> {
     }
 
     /// Check if it can become leader.
-    private fun handleCandidacyStatus(): CandidacyStatus = this.prs.candidacyStatus(this.votes).also {
+    private fun checkVotes(): VoteResult = this.prs.voteResult(this.votes).also {
         when (it) {
-            CandidacyStatus.Elected -> {
+            VoteResult.Won -> {
                 if (this.state == StateRole.PreCandidate) {
                     this.campaign(CAMPAIGN_ELECTION)
                 } else {
@@ -983,13 +983,12 @@ class Raft<STORAGE : Storage> {
                     this.bcastAppend()
                 }
             }
-            CandidacyStatus.Ineligible -> {
+            VoteResult.Lost -> {
                 // pb.MsgPreVoteResp contains future term of pre-candidate
                 // m.term > self.term; reuse self.term
                 this.becomeFollower(this.term, INVALID_ID)
             }
-            CandidacyStatus.Eligible -> {
-            }
+            VoteResult.Pending -> {}
         }
     }
 
