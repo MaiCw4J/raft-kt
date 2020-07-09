@@ -12,7 +12,7 @@ import mu.KotlinLogging
 class ProgressTracker {
     val progress: MutableMap<Long, Progress>
 
-    val votes: MutableMap<Long, Boolean>
+    private val votes: MutableMap<Long, Boolean>
 
     /// The current configuration state of the cluster.
     val configuration: Configuration

@@ -86,7 +86,7 @@ class Raft<STORAGE : Storage> {
 
     /// The peer is requesting snapshot, it is the index that the follower
     /// needs it to be included in a snapshot.
-    var pendingRequestSnapshot: Long
+    private var pendingRequestSnapshot: Long
 
     var prs: ProgressTracker
 
@@ -738,7 +738,9 @@ class Raft<STORAGE : Storage> {
                     }
 
                     if (this.maybeCommit()) {
-                        this.bcastAppend()
+                        if (this.shouldBcastCommit()) {
+                            this.bcastAppend()
+                        }
                     } else if (oldPaused) {
                         // If we were paused before, this node may be missing the
                         // latest commit index, so send it.
@@ -941,7 +943,7 @@ class Raft<STORAGE : Storage> {
             Pair(MsgRequestVote, this.term)
         }
 
-        if (poll(this.id, true) == VoteResult.Won) {
+        if (this.poll(this.id, true) == VoteResult.Won) {
             // We won the election after voting for ourselves (which must mean that
             // this is a single-node cluster).
             return
@@ -968,7 +970,7 @@ class Raft<STORAGE : Storage> {
         }
     }
 
-    fun poll(from: Long, vote: Boolean): VoteResult {
+    private fun poll(from: Long, vote: Boolean): VoteResult {
 
         this.prs.recordVote(from, vote)
 
@@ -1435,9 +1437,10 @@ class Raft<STORAGE : Storage> {
 
     /// Broadcasts heartbeats to all the followers if it's leader.
     fun ping() {
-        if (this.state == StateRole.Leader) {
-            this.bcastHeartbeat()
+        if (this.state != StateRole.Leader) {
+            return
         }
+        stepLocal(MsgBeat)
     }
 
     /// # Errors
@@ -1524,16 +1527,6 @@ class Raft<STORAGE : Storage> {
         return
     }
 
-    /// Set whether skip broadcast empty commit messages at runtime.
-    fun skipBcastCommit(skip: Boolean) {
-        this.skipBcastCommit = skip
-    }
-
-    /// Set whether batch append msg at runtime.
-    fun batchAppend(batchAppend: Boolean) {
-        this.batchAppend = batchAppend
-    }
-
     // responseToReadIndexReq constructs a response for `req`. If `req` comes from the peer
     // itself, a blank value will be returned.
     private fun responseToReadIndexReq(req: Eraftpb.Message.Builder, readIndex: Long) {
@@ -1570,5 +1563,8 @@ class Raft<STORAGE : Storage> {
             this.responseToReadIndexReq(it.req, it.index)
         }
     }
+
+    /// Specifies if the commit should be broadcast.
+    fun shouldBcastCommit(): Boolean = !this.skipBcastCommit || this.hasPendingConf()
 
 }

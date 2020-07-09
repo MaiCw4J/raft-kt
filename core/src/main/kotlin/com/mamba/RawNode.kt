@@ -279,10 +279,14 @@ class RawNode<STORAGE : Storage> {
     fun store(): STORAGE = this.raft.raftLog.store
 
     /// Set whether skip broadcast empty commit messages at runtime.
-    fun skipBcastCommit(skip: Boolean) = this.raft.skipBcastCommit(skip)
+    fun skipBcastCommit(skip: Boolean) {
+        this.raft.skipBcastCommit = skip
+    }
 
     /// Set whether to batch append msg at runtime.
-    fun setBatchAppend(batchAppend: Boolean) = this.raft.batchAppend(batchAppend)
+    fun setBatchAppend(batchAppend: Boolean) {
+        this.raft.batchAppend = batchAppend
+    }
 
     /// Set priority of node.
     fun setPriority(priority: Long) {
