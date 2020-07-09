@@ -35,12 +35,12 @@ class JointConfig {
         val i = this.incoming.voteResult(check)
         val o = this.outgoing.voteResult(check)
 
+        // It won if won in both.
         if (i == VoteResult.Won && o == VoteResult.Won) {
-            // It won if won in both.
             return VoteResult.Won
         }
+        // It lost if lost in either.
         if (i == VoteResult.Lost || o == VoteResult.Lost) {
-            // It lost if lost in either.
             return VoteResult.Lost
         }
         // It remains pending if pending in both or just won in one side.

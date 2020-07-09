@@ -1449,18 +1449,11 @@ class Raft<STORAGE : Storage> {
             logger.debug { "adding node ${role.name} with ID $id to peers." }
         }
 
-        when {
-            role == ProgressRole.LEARNER -> {
-                val progress = Progress(this.raftLog.lastIndex() + 1, this.maxInflight)
-                this.prs.insertVoterOrLearner(id, progress, role)
-            }
-            this.prs.learnerIds().contains(id) -> {
-                this.prs.promoteLearner(id)
-            }
-            else -> {
-                val progress = Progress(this.raftLog.lastIndex() + 1, this.maxInflight)
-                this.prs.insertVoterOrLearner(id, progress, role)
-            }
+        if (this.prs.learnerIds().contains(id)) {
+            this.prs.promoteLearner(id)
+        } else {
+            val progress = Progress(this.raftLog.lastIndex() + 1, this.maxInflight)
+            this.prs.insertVoterOrLearner(id, progress, role)
         }
 
         if (this.id == id) {
