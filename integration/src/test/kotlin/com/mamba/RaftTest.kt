@@ -1,7 +1,7 @@
 package com.mamba
 
 import com.mamba.constanst.ProgressState
-import com.mamba.progress.Progress
+import com.mamba.tracker.Progress
 import org.junit.Test
 import kotlin.test.assertEquals
 

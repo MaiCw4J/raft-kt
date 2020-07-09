@@ -6,8 +6,8 @@ import com.mamba.constanst.ProgressState
 import com.mamba.constanst.StateRole
 import com.mamba.exception.RaftError
 import com.mamba.exception.RaftErrorException
-import com.mamba.progress.Progress
-import com.mamba.progress.Tracker
+import com.mamba.tracker.Progress
+import com.mamba.tracker.ProgressTracker
 import com.mamba.quorum.VoteResult
 import com.mamba.storage.Storage
 import eraftpb.Eraftpb
@@ -88,19 +88,14 @@ class Raft<STORAGE : Storage> {
     /// needs it to be included in a snapshot.
     var pendingRequestSnapshot: Long
 
-    var prs: Tracker
+    var prs: ProgressTracker
 
     /// The current role of this node.
     var state: StateRole
 
     /// Indicates whether state machine can be promoted to leader,
-    /// which is true when it's a voter and its own id is in progress list.
+    /// which is true when it's a voter and its own id is in tracker list.
     var promotable: Boolean
-
-    /// The current votes for this node in an election.
-    ///
-    /// Reset when changing role.
-    private val votes: MutableMap<Long, Boolean>
 
     /// The list of messages.
     val msgs: Vec<Eraftpb.Message.Builder>
@@ -176,7 +171,7 @@ class Raft<STORAGE : Storage> {
         this.raftLog = RaftLog(store)
         this.maxInflight = config.maxInflightMsgs
         this.maxMsgSize = config.maxSizePerMsg
-        this.prs = Tracker(voters.size, learners.size)
+        this.prs = ProgressTracker(voters.size, learners.size)
         this.pendingRequestSnapshot = INVALID_INDEX
         this.state = StateRole.Follower
         this.promotable = false
@@ -185,7 +180,6 @@ class Raft<STORAGE : Storage> {
         this.readOnly = ReadOnly(config.readOnlyOption)
         this.heartbeatTimeout = config.heartbeatTick
         this.electionTimeout = config.electionTick
-        this.votes = HashMap()
         this.msgs = vec()
         this.leaderId = INVALID_ID
         this.leadTransferee = null
@@ -443,8 +437,7 @@ class Raft<STORAGE : Storage> {
                 val acceptance = !m.reject
                 logger.info { "received ${if (acceptance) "rejection" else "acceptance"} from ${m.from}" }
 
-                this.registerVote(m.from, acceptance)
-                this.checkVotes()
+                this.poll(m.from, acceptance)
             }
             MsgTimeoutNow -> {
                 if (logger.isDebugEnabled) {
@@ -516,7 +509,7 @@ class Raft<STORAGE : Storage> {
                     "starts to restore snapshot [index: ${metadata.index}, term: ${metadata.term}]"
         }
 
-        // Restore progress set and the learner flag.
+        // Restore tracker set and the learner flag.
         val nextIdx = this.raftLog.lastIndex() + 1
 
         this.prs.restoreSnapshotMeta(metadata, nextIdx, this.maxInflight)
@@ -622,7 +615,7 @@ class Raft<STORAGE : Storage> {
     }
 
     private fun stepLeader(m: Eraftpb.Message.Builder) {
-        // These message types do not require any progress for m.From.
+        // These message types do not require any tracker for m.From.
         when (m.msgType) {
             MsgBeat -> {
                 this.bcastHeartbeat()
@@ -648,7 +641,7 @@ class Raft<STORAGE : Storage> {
 
                 if (this.leadTransferee != null) {
                     if (logger.isDebugEnabled) {
-                        logger.debug { "[term ${this.term}] transfer leadership to $this.leadTransferee is in progress; dropping proposal" }
+                        logger.debug { "[term ${this.term}] transfer leadership to $this.leadTransferee is in tracker; dropping proposal" }
                     }
                     raftError(RaftError.ProposalDropped)
                 }
@@ -675,7 +668,13 @@ class Raft<STORAGE : Storage> {
                     return
                 }
 
-                if (!this.prs.hasQuorum(this.id) && this.readOnly.option == ReadOnlyOption.Safe) {
+                if (this.prs.isSingleton()) {
+                    val readIndex = this.raftLog.committed
+                    this.responseToReadIndexReq(m, readIndex)
+                    return
+                }
+
+                if (this.readOnly.option == ReadOnlyOption.Safe) {
                     // thinking: use an interally defined context instead of the user given context.
                     // We can express this in terms of the term and index instead of
                     // a user-supplied value.
@@ -695,7 +694,7 @@ class Raft<STORAGE : Storage> {
         val from = this.prs.progress[m.from]
         if (from == null) {
             if (logger.isDebugEnabled) {
-                logger.debug("no progress available for ${m.from}")
+                logger.debug("no tracker available for ${m.from}")
             }
             return
         }
@@ -714,7 +713,7 @@ class Raft<STORAGE : Storage> {
 
                     if (from.maybeDecrTo(m.index, m.rejectHint, m.requestSnapshot)) {
                         if (logger.isDebugEnabled) {
-                            logger.debug("decreased progress of ${m.from}")
+                            logger.debug("decreased tracker of ${m.from}")
                         }
                         if (from.state == ProgressState.Replicate) {
                             from.becomeProbe()
@@ -755,7 +754,7 @@ class Raft<STORAGE : Storage> {
                     @Suppress("ControlFlowWithEmptyBody")
                     while (this.maybeSendAppend(m.from, from, false)) { }
 
-                    // Transfer leadership is in progress.
+                    // Transfer leadership is in tracker.
                     val isTimeoutNow = this.leadTransferee != null &&
                             this.leadTransferee == m.from &&
                             from.matched == this.raftLog.lastIndex()
@@ -773,7 +772,7 @@ class Raft<STORAGE : Storage> {
 
                 from.resume()
 
-                // free one slot for the full inflights window to allow progress.
+                // free one slot for the full inflights window to allow tracker.
                 if (from.state == ProgressState.Replicate && from.ins.full()) {
                     from.ins.freeFirstOne()
                 }
@@ -827,7 +826,7 @@ class Raft<STORAGE : Storage> {
                 val lastLeadTransferee = this.leadTransferee
                 if (lastLeadTransferee != null) {
                     if (lastLeadTransferee == leadTransferee) {
-                        logger.info("[term ${this.term}] transfer leadership to $leadTransferee is in progress, ignores request to same node")
+                        logger.info("[term ${this.term}] transfer leadership to $leadTransferee is in tracker, ignores request to same node")
                         return
                     }
                     this.abortLeaderTransfer()
@@ -942,9 +941,7 @@ class Raft<STORAGE : Storage> {
             Pair(MsgRequestVote, this.term)
         }
 
-        this.registerVote(this.id, true)
-
-        if (checkVotes() == VoteResult.Won) {
+        if (poll(this.id, true) == VoteResult.Won) {
             // We won the election after voting for ourselves (which must mean that
             // this is a single-node cluster).
             return
@@ -971,28 +968,32 @@ class Raft<STORAGE : Storage> {
         }
     }
 
-    /// Check if it can become leader.
-    private fun checkVotes(): VoteResult = this.prs.voteResult(this.votes).also {
-        when (it) {
-            VoteResult.Won -> {
-                if (this.state == StateRole.PreCandidate) {
-                    this.campaign(CAMPAIGN_ELECTION)
-                } else {
-                    this.becomeLeader()
-                    this.bcastAppend()
+    fun poll(from: Long, vote: Boolean): VoteResult {
+
+        this.prs.recordVote(from, vote)
+
+        return this.prs.voteResult().also {
+            when (it) {
+                VoteResult.Won -> {
+                    if (this.state == StateRole.PreCandidate) {
+                        this.campaign(CAMPAIGN_ELECTION)
+                    } else {
+                        this.becomeLeader()
+                        this.bcastAppend()
+                    }
                 }
+                VoteResult.Lost -> {
+                    // pb.MsgPreVoteResp contains future term of pre-candidate
+                    // m.term > self.term; reuse self.term
+                    this.becomeFollower(this.term, INVALID_ID)
+                }
+                VoteResult.Pending -> {}
             }
-            VoteResult.Lost -> {
-                // pb.MsgPreVoteResp contains future term of pre-candidate
-                // m.term > self.term; reuse self.term
-                this.becomeFollower(this.term, INVALID_ID)
-            }
-            VoteResult.Pending -> {}
         }
     }
 
     /// Sends RPC, with entries to all peers that are not up-to-date
-    /// according to the progress recorded in r.prs().
+    /// according to the tracker recorded in r.prs().
     private fun bcastAppend() {
         for ((pid, pr) in this.prs.progress) {
             if (pid == this.id) {
@@ -1145,7 +1146,7 @@ class Raft<STORAGE : Storage> {
         // Followers enter replicate mode when they've been successfully probed
         // (perhaps after having received a snapshot as a result). The leader is
         // trivially in this state. Note that r.reset() has initialized this
-        // progress with the last index already.
+        // tracker with the last index already.
         this.prs.progress[this.id]!!.becomeReplicate()
 
         // Conservatively set the pending_conf_index to the last index in the
@@ -1178,7 +1179,7 @@ class Raft<STORAGE : Storage> {
 
         this.abortLeaderTransfer()
 
-        this.votes.clear()
+        this.prs.resetVotes()
 
         this.pendingConfIndex = 0
         this.readOnly = ReadOnly(this.readOnly.option)
@@ -1245,11 +1246,6 @@ class Raft<STORAGE : Storage> {
         this.send(toSend)
     }
 
-    /// Sets the vote of `id` to `vote`.
-    private fun registerVote(id: Long, acceptance: Boolean) {
-        this.votes.putIfAbsent(id, acceptance)
-    }
-
     /// Converts this node to a candidate
     ///
     /// # Panics
@@ -1274,7 +1270,7 @@ class Raft<STORAGE : Storage> {
         if (this.state == StateRole.Leader) {
             panic("invalid transition [leader -> pre-candidate]")
         }
-        this.votes.clear()
+        this.prs.resetVotes()
         // Becoming a pre-candidate changes our state.
         // but doesn't change anything else. In particular it does not increase
         // self.term or change self.vote.

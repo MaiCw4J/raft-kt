@@ -1,19 +1,19 @@
-package com.mamba.progress
+package com.mamba.tracker
 
 import com.mamba.panic
 
 class Inflights {
     // the starting index in the buffer
-    var start: Int
+    private var start: Int
 
     // number of inflights in the buffer
-    var count: Int
+    private var count: Int
 
     // cap ring buffer
-    val cap: Int
+    private val cap: Int
 
     // ring buffer
-    val buffer: MutableList<Long>
+    private val buffer: MutableList<Long>
 
     constructor(cap: Int) {
         this.start = 0

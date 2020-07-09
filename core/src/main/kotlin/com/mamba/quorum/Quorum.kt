@@ -4,9 +4,10 @@ import com.mamba.majority
 
 typealias Index = Long
 typealias AckIndex = (Long) -> Index?
+typealias VoteCheck = (Long) -> Boolean?
 
 /// A set of IDs that uses majority quorums to make decisions.
-class MajorityConfiguration {
+class MajorityConfig {
 
     val voters: MutableSet<Long>
 
@@ -47,7 +48,7 @@ class MajorityConfiguration {
     /// a result indicating whether the vote is pending (i.e. neither a quorum of
     /// yes/no has been reached), won (a quorum of yes has been reached), or lost (a
     /// quorum of no has been reached).
-    fun voteResult(check: (Long) -> Boolean?): VoteResult {
+    fun voteResult(check: VoteCheck): VoteResult {
         if (this.voters.isEmpty()) {
             // By convention, the elections on an empty config win. This comes in
             // handy with joint quorums because it'll make a half-populated joint

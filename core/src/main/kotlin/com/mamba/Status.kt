@@ -1,7 +1,7 @@
 package com.mamba
 
 import com.mamba.constanst.StateRole
-import com.mamba.progress.Tracker
+import com.mamba.tracker.ProgressTracker
 import eraftpb.Eraftpb
 
 /// Represents the current status of the raft
@@ -18,8 +18,8 @@ class Status {
     /// The index of the last entry to have been applied.
     val applied: Long
 
-    /// The progress towards catching up and applying logs.
-    val progress: Tracker?
+    /// The tracker towards catching up and applying logs.
+    val progress: ProgressTracker?
 
     /// Gets a copy of the current raft status.
     constructor(raft: Raft<*>) {

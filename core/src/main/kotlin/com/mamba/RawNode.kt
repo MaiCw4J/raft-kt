@@ -109,10 +109,7 @@ class RawNode<STORAGE : Storage> {
     /// Takes the conf change and applies it.
     fun applyConfChange(cc: Eraftpb.ConfChange): Eraftpb.ConfState {
         if (cc.nodeId == INVALID_ID) {
-            return Eraftpb.ConfState.newBuilder().apply {
-                this.addAllVoters(this@RawNode.raft.prs.voterIds())
-                this.addAllLearners(this@RawNode.raft.prs.learnerIds())
-            }.build()
+            return this.raft.prs.configuration.toConfState()
         }
 
         when (cc.changeType) {

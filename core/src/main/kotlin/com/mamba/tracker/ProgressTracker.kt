@@ -1,4 +1,4 @@
-package com.mamba.progress
+package com.mamba.tracker
 
 import com.mamba.constanst.ProgressRole
 import com.mamba.exception.RaftError
@@ -9,17 +9,20 @@ import mu.KotlinLogging
 
 /// `Tracker` contains several `Progress`es,
 /// which could be `Leader`, `Follower` and `Learner`.
-class Tracker {
+class ProgressTracker {
     val progress: MutableMap<Long, Progress>
+
+    val votes: MutableMap<Long, Boolean>
 
     /// The current configuration state of the cluster.
     val configuration: Configuration
 
     private val logger = KotlinLogging.logger {}
 
-    /// Create a progress set with the specified sizes already reserved.
+    /// Create a tracker set with the specified sizes already reserved.
     constructor(voters: Int, learners: Int) {
         this.progress = HashMap(voters + learners)
+        this.votes = HashMap(voters)
         this.configuration = Configuration(voters, learners)
     }
 
@@ -32,13 +35,13 @@ class Tracker {
     ///
     /// **Note:** Do not use this for majority/quorum calculation. The Raft node may be
     /// transitioning to a new configuration and have two quorum. Use `has_quorum` instead.
-    fun voterIds(): Set<Long> = this.configuration.votes.voters
+    fun voterIds(): Set<Long> = this.configuration.votes.ids()
 
     /// Returns the ids of all known learners.
     ///
     /// **Note:** Do not use this for majority/quorum calculation. The Raft node may be
     /// transitioning to a new configuration and have two qourums. Use `has_quorum` instead.
-    fun learnerIds(): Set<Long> = this.configuration.learners
+    fun learnerIds(): Set<Long> = this.configuration.learners.union(this.configuration.learnersNext)
 
     /// Returns the status of voters.
     ///
@@ -81,7 +84,7 @@ class Tracker {
 
         for (id in metadata.confState.votersList) {
             this.progress[id] = Progress(nextIdx, maxInflight)
-            this.configuration.votes.voters.add(id)
+            this.configuration.votes.incoming.voters.add(id)
         }
 
         for (id in metadata.confState.learnersList) {
@@ -126,7 +129,7 @@ class Tracker {
         }
 
         val collection = when (role) {
-            ProgressRole.VOTER -> this.configuration.votes.voters
+            ProgressRole.VOTER -> this.configuration.votes.incoming.voters
             ProgressRole.LEARNER -> this.configuration.learners
         }
 
@@ -144,7 +147,7 @@ class Tracker {
             logger.debug { "Removing peer with id = $id" }
         }
 
-        this.configuration.votes.voters.remove(id)
+        this.configuration.votes.incoming.voters.remove(id)
         this.configuration.learners.remove(id)
 
         return this.progress.remove(id)
@@ -161,7 +164,7 @@ class Tracker {
             raftError(RaftError.NotExists, id, ProgressRole.LEARNER.name)
         }
 
-        if (!this.configuration.votes.voters.add(id)) {
+        if (!this.configuration.votes.incoming.voters.add(id)) {
             // Already existed, the caller should know this was a noop.
             raftError(RaftError.Exists, id, ProgressRole.VOTER.name)
         }
@@ -172,6 +175,21 @@ class Tracker {
     /// If it is still eligible, it should continue polling nodes and checking.
     /// Eventually, the election will result in this returning either `Elected`
     /// or `Ineligible`, meaning the election can be concluded.
-    fun voteResult(votes: Map<Long, Boolean>): VoteResult = this.configuration.votes.voteResult { id -> votes[id] }
+    fun voteResult(): VoteResult = this.configuration.votes.voteResult { id -> this.votes[id] }
+
+    /// Prepares for a new round of vote counting via recordVote.
+    fun resetVotes() {
+        this.votes.clear()
+    }
+
+    /// Records that the node with the given id voted for this Raft
+    /// instance if v == true (and declined it otherwise).
+    fun recordVote(id: Long, vote: Boolean) {
+        this.votes[id] = vote
+    }
+
+    /// Returns true if (and only if) there is only one voting member
+    /// (i.e. the leader) in the current configuration.
+    fun isSingleton(): Boolean = this.configuration.votes.isSingleton()
 
 }

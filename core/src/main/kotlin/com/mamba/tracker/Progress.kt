@@ -1,4 +1,4 @@
-package com.mamba.progress
+package com.mamba.tracker
 
 import com.mamba.constanst.ProgressState
 import com.mamba.INVALID_INDEX
@@ -17,7 +17,7 @@ class Progress {
     var committed: Long
 
     /// When in ProgressStateProbe, leader sends at most one replication message
-    /// per heartbeat interval. It also probes actual progress of the follower.
+    /// per heartbeat interval. It also probes actual tracker of the follower.
     ///
     /// When in ProgressStateReplicate, leader optimistically increases next
     /// to the latest entry sent after sending replication message. This is
@@ -43,8 +43,8 @@ class Progress {
     /// index of the snapshot.
     var pendingRequestSnapshot: Long
 
-    /// This is true if the progress is recently active. Receiving any messages
-    /// from the corresponding follower indicates the progress is active.
+    /// This is true if the tracker is recently active. Receiving any messages
+    /// from the corresponding follower indicates the tracker is active.
     /// RecentActive can be reset to false after an election timeout.
     var recentActive: Boolean
 
@@ -87,9 +87,9 @@ class Progress {
         this.ins.reset()
     }
 
-    /// Changes the progress to a probe.
+    /// Changes the tracker to a probe.
     fun becomeProbe() {
-        // If the original state is ProgressStateSnapshot, progress knows that
+        // If the original state is ProgressStateSnapshot, tracker knows that
         // the pending snapshot has been sent to this peer successfully, then
         // probes from pendingSnapshot + 1.
         if (this.state == ProgressState.Snapshot) {
@@ -102,13 +102,13 @@ class Progress {
         }
     }
 
-    /// Changes the progress to a Replicate.
+    /// Changes the tracker to a Replicate.
     fun becomeReplicate() {
         this.resetState(ProgressState.Replicate)
         this.nextIdx = this.matched + 1
     }
 
-    /// Changes the progress to a snapshot.
+    /// Changes the tracker to a snapshot.
     fun becomeSnapshot(snapshotIdx: Long) {
         this.resetState(ProgressState.Snapshot)
         this.pendingSnapshot = snapshotIdx
@@ -124,7 +124,7 @@ class Progress {
     fun maybeSnapshotAbort(): Boolean = this.state == ProgressState.Snapshot && this.matched >= this.pendingSnapshot
 
     /// Returns false if the given n index comes from an outdated message.
-    /// Otherwise it updates the progress and returns true.
+    /// Otherwise it updates the tracker and returns true.
     fun maybeUpdate(n: Long): Boolean {
         val needUpdate = this.matched < n
         if (needUpdate) {
@@ -138,12 +138,12 @@ class Progress {
         return needUpdate
     }
 
-    /// Resume progress
+    /// Resume tracker
     fun resume() {
         this.paused = false
     }
 
-    /// Pause progress.
+    /// Pause tracker.
     fun pause() {
         this.paused = true
     }
@@ -154,11 +154,11 @@ class Progress {
     }
 
     /// Returns false if the given index comes from an out of order message.
-    /// Otherwise it decreases the progress next index to min(rejected, last)
+    /// Otherwise it decreases the tracker next index to min(rejected, last)
     /// and returns true.
     fun maybeDecrTo(rejected: Long, last: Long, requestSnapshot: Long): Boolean {
         if (this.state == ProgressState.Replicate) {
-            // the rejection must be stale if the progress has matched and "rejected"
+            // the rejection must be stale if the tracker has matched and "rejected"
             // is smaller than "match".
             // Or rejected equals to matched and request_snapshot is the INVALID_INDEX.
             if (rejected < this.matched || (rejected == this.matched && requestSnapshot == INVALID_INDEX)) {
@@ -193,7 +193,7 @@ class Progress {
         return true
     }
 
-    /// Determine whether progress is paused.
+    /// Determine whether tracker is paused.
     fun isPaused(): Boolean = when (this.state) {
         ProgressState.Probe -> this.paused
         ProgressState.Replicate -> this.ins.full()
@@ -208,7 +208,7 @@ class Progress {
                 this.ins.add(last)
             }
             ProgressState.Probe -> this.pause()
-            ProgressState.Snapshot -> throw PanicException("updating progress state in unhandled state ${this.state}")
+            ProgressState.Snapshot -> throw PanicException("updating tracker state in unhandled state ${this.state}")
         }
     }
 
