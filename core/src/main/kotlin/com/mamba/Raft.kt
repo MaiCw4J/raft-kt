@@ -706,31 +706,34 @@ class Raft<STORAGE : Storage> {
                 // update followers committed index via append response
                 from.updateCommitted(m.commit)
 
-                if (m.reject) {
-                    if (logger.isDebugEnabled) {
-                        logger.debug("received msgAppend rejection last index ${m.rejectHint}, from ${m.from}, index ${m.index}")
+                do {
+                    if (m.reject) {
+                        if (logger.isDebugEnabled) {
+                            logger.debug("received msgAppend rejection last index ${m.rejectHint}, from ${m.from}, index ${m.index}")
+                        }
+
+                        if (from.maybeDecrTo(m.index, m.rejectHint, m.requestSnapshot)) {
+                            if (logger.isDebugEnabled) {
+                                logger.debug("decreased tracker of ${m.from}")
+                            }
+                            if (from.state == ProgressState.Replicate) {
+                                from.becomeProbe()
+                            }
+                            this.sendAppend(m.from, from)
+                        }
+                        break
                     }
 
-                    if (from.maybeDecrTo(m.index, m.rejectHint, m.requestSnapshot)) {
-                        if (logger.isDebugEnabled) {
-                            logger.debug("decreased tracker of ${m.from}")
-                        }
-                        if (from.state == ProgressState.Replicate) {
-                            from.becomeProbe()
-                        }
-                        this.sendAppend(m.from, from)
-                    }
-                } else {
                     val oldPaused = from.isPaused()
                     if (!from.maybeUpdate(m.index)) {
-                        return
+                        break
                     }
 
                     when (from.state) {
                         ProgressState.Probe -> from.becomeReplicate()
                         ProgressState.Snapshot -> if (from.maybeSnapshotAbort()) {
                             if (logger.isDebugEnabled) {
-                                logger.debug("snapshot aborted, resumed sending replication messages to {}")
+                                logger.debug("snapshot aborted, resumed sending replication messages to $from")
                             }
                             from.becomeProbe()
                         }
@@ -764,7 +767,7 @@ class Raft<STORAGE : Storage> {
                         logger.info("sent MsgTimeoutNow to ${m.from} after received MsgAppResp")
                         this.sendTimeoutNow(m.from)
                     }
-                }
+                } while (false)
             }
             MsgHeartbeatResponse -> {
                 from.recentActive = true
