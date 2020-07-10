@@ -12,11 +12,11 @@ class RaftTest {
         val matched = 1L
 
         val testCase = listOf(
-            Pair(newProgress(ProgressState.Replicate, matched, 5, 0, 256), 2L),
+            (newProgress(ProgressState.Replicate, matched, 5, 0, 256) to 2L),
             // snapshot finish
-            Pair(newProgress(ProgressState.Snapshot, matched, 5, 10, 256), 11L),
+            (newProgress(ProgressState.Snapshot, matched, 5, 10, 256) to 11L),
             // snapshot failure
-            Pair(newProgress(ProgressState.Snapshot, matched, 5, 0, 256), 2L)
+            (newProgress(ProgressState.Snapshot, matched, 5, 0, 256) to 2L)
         )
 
         testCase.forEachIndexed { i, (p, n) ->

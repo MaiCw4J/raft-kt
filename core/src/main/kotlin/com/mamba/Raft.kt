@@ -937,10 +937,10 @@ class Raft<STORAGE : Storage> {
     private fun campaign(campaignType: ByteString) {
         val (voteType, term) = if (campaignType == CAMPAIGN_PRE_ELECTION) {
             this.becomePreCandidate()
-            Pair(MsgRequestPreVote, this.term + 1)
+            (MsgRequestPreVote to this.term + 1)
         } else {
             this.becomeCandidate()
-            Pair(MsgRequestVote, this.term)
+            (MsgRequestVote to this.term)
         }
 
         if (this.poll(this.id, true) == VoteResult.Won) {
