@@ -32,7 +32,10 @@ enum class RaftError(val desc: String) {
     /// The snapshot is being created.
     StorageSnapshotTemporarilyUnavailable("snapshot is temporarily unavailable"),
 
-    RequestSnapshotDropped(""),
+    RequestSnapshotDropped("raft: request snapshot dropped"),
+
+    /// ConfChange proposal is invalid.
+    ConfChangeError("%s"),
 
     /// Some other error occurred.
     StorageOther("unknown error");

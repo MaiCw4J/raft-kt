@@ -57,7 +57,7 @@ class Configuration {
     /// configuration should be carried out automatically by Raft when this is
     /// possible. If false, the configuration will be joint until the application
     /// initiates the transition manually.
-    val autoLeave: Boolean
+    var autoLeave: Boolean
 
     constructor(votes: MutableSet<Long>, learners: MutableSet<Long>) {
         this.votes = JointConfig(votes)

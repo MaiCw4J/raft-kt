@@ -1,5 +1,7 @@
 package com.mamba.tracker
 
+import com.mamba.confchange.MapChange
+import com.mamba.confchange.MapChangeType
 import com.mamba.constanst.ProgressRole
 import com.mamba.exception.RaftError
 import com.mamba.quorum.VoteResult
@@ -7,23 +9,28 @@ import com.mamba.raftError
 import eraftpb.Eraftpb
 import mu.KotlinLogging
 
+typealias ProgressMap = MutableMap<Long, Progress>
+
 /// `Tracker` contains several `Progress`es,
 /// which could be `Leader`, `Follower` and `Learner`.
 class ProgressTracker {
-    val progress: MutableMap<Long, Progress>
+    val progress: ProgressMap
 
     private val votes: MutableMap<Long, Boolean>
 
     /// The current configuration state of the cluster.
-    val configuration: Configuration
+    var configuration: Configuration
+
+    private val maxInflight: Int
 
     private val logger = KotlinLogging.logger {}
 
     /// Create a tracker set with the specified sizes already reserved.
-    constructor(voters: Int, learners: Int) {
+    constructor(voters: Int, learners: Int, maxInflight: Int) {
         this.progress = HashMap(voters + learners)
         this.votes = HashMap(voters)
         this.configuration = Configuration(voters, learners)
+        this.maxInflight = maxInflight
     }
 
     /// Returns the maximal committed index for the cluster.
@@ -192,4 +199,21 @@ class ProgressTracker {
     /// (i.e. the leader) in the current configuration.
     fun isSingleton(): Boolean = this.configuration.votes.isSingleton()
 
+    /// Applies configuration and updates progress map to match the configuration.
+    fun applyConf(cfg: Configuration, changes: MapChange, nextIdx: Long) {
+        this.configuration = cfg
+        for ((id, changeType) in changes) {
+            when(changeType) {
+                MapChangeType.Add -> {
+                    val p = Progress(nextIdx, this.maxInflight)
+                    // When a node is first added, we should mark it as recently active.
+                    // Otherwise, CheckQuorum may cause us to step down if it is invoked
+                    // before the added node has had a chance to communicate with us.
+                    p.recentActive = true
+                    this.progress[id] = p
+                }
+                MapChangeType.Remove -> this.progress.remove(id)
+            }
+        }
+    }
 }

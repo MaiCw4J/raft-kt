@@ -171,7 +171,7 @@ class Raft<STORAGE : Storage> {
         this.raftLog = RaftLog(store)
         this.maxInflight = config.maxInflightMsgs
         this.maxMsgSize = config.maxSizePerMsg
-        this.prs = ProgressTracker(voters.size, learners.size)
+        this.prs = ProgressTracker(voters.size, learners.size, config.maxInflightMsgs)
         this.pendingRequestSnapshot = INVALID_INDEX
         this.state = StateRole.Follower
         this.promotable = false
@@ -712,15 +712,18 @@ class Raft<STORAGE : Storage> {
                             logger.debug("received msgAppend rejection last index ${m.rejectHint}, from ${m.from}, index ${m.index}")
                         }
 
-                        if (from.maybeDecrTo(m.index, m.rejectHint, m.requestSnapshot)) {
-                            if (logger.isDebugEnabled) {
-                                logger.debug("decreased tracker of ${m.from}")
-                            }
-                            if (from.state == ProgressState.Replicate) {
-                                from.becomeProbe()
-                            }
-                            this.sendAppend(m.from, from)
+                        if (!from.maybeDecrTo(m.index, m.rejectHint, m.requestSnapshot)) {
+                            break
                         }
+
+                        if (logger.isDebugEnabled) {
+                            logger.debug("decreased tracker of ${m.from}")
+                        }
+                        if (from.state == ProgressState.Replicate) {
+                            from.becomeProbe()
+                        }
+                        this.sendAppend(m.from, from)
+
                         break
                     }
 
