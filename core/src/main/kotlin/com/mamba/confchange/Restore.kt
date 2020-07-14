@@ -9,7 +9,7 @@ import eraftpb.Eraftpb
 fun newConfChangeSingle(nodeId: Long, cct: Eraftpb.ConfChangeType): Eraftpb.ConfChangeSingle {
     return Eraftpb.ConfChangeSingle.newBuilder().apply {
         this.nodeId = nodeId
-        this.ccType = cct
+        this.changeType = cct
     }.build()
 }
 

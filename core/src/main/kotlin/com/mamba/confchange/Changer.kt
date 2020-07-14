@@ -207,7 +207,7 @@ class Changer(private val tracker: ProgressTracker) {
                 // here to ignore these.
                 continue
             }
-            when(cc.ccType) {
+            when(cc.changeType) {
                 Eraftpb.ConfChangeType.AddNode -> this.makeVoter(cfg, prs, cc.nodeId)
                 Eraftpb.ConfChangeType.AddLearnerNode -> this.makeLearner(cfg, prs, cc.nodeId)
                 Eraftpb.ConfChangeType.RemoveNode -> this.remove(cfg, prs, cc.nodeId)

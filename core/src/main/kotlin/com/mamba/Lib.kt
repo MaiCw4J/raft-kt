@@ -34,7 +34,6 @@ fun raftError(error: RaftError, vararg args: Any?): Nothing {
     throw RaftErrorException(error, error.desc.format(args))
 }
 
-
 fun <E> Vec<E>.truncate(index: Int) {
     if (index > this.size) {
         return
@@ -58,7 +57,6 @@ fun <E> Vec<E>.drain(index: Int): Vec<E> {
 }
 
 inline fun <reified E> Vec<E>.array(r: IntRange): Array<E> = this.subList(r.first, r.last).toTypedArray()
-
 
 fun Eraftpb.MessageType.isLocalMsg(): Boolean = when (this) {
     Eraftpb.MessageType.MsgHup,
