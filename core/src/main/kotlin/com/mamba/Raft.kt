@@ -1298,7 +1298,9 @@ class Raft<STORAGE : Storage> {
         if (logger.isDebugEnabled) {
             logger.debug { "Sending from ${this.id} to ${m.to}" }
         }
-        m.from = this.id
+        if (m.from == INVALID_ID) {
+            m.from = this.id
+        }
         when (m.msgType) {
             MsgRequestVote, MsgRequestPreVote, MsgRequestVoteResponse, MsgRequestPreVoteResponse -> {
                 if (m.term == 0L) {
